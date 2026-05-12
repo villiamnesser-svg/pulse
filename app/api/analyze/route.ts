@@ -67,7 +67,7 @@ export async function GET() {
     prisma.insight.findFirst({
       where: { sentAt: { gte: cooldownTime } },
       orderBy: { sentAt: 'desc' },
-    }).then(async (recentInsight) => {
+    }).then(async (recentInsight: { id: string } | null) => {
       if (!recentInsight) {
         try {
           const advice = await generateAdvice(velocity, categories)
