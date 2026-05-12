@@ -1,0 +1,79 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Transaction {
+  id        String   @id
+  date      DateTime
+  merchant  String
+  amount    Float
+  balance   Float
+  category  String?
+  isIncome  Boolean  @default(false)
+  note      String?
+  createdAt DateTime @default(now())
+}
+
+model Baseline {
+  id         String   @id @default(cuid())
+  category   String   @unique
+  weeklyAvg  Float
+  monthlyAvg Float
+  byWeekday  String
+  updatedAt  DateTime @updatedAt
+}
+
+model Insight {
+  id      String   @id @default(cuid())
+  type    String
+  message String
+  data    String?
+  read    Boolean  @default(false)
+  sentAt  DateTime @default(now())
+}
+
+model SeasonalMemory {
+  id         String  @id @default(cuid())
+  year       Int
+  month      String
+  total      Float
+  byCategory String
+  note       String?
+
+  @@unique([year, month])
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  endpoint  String   @unique
+  keys      String
+  createdAt DateTime @default(now())
+}
+
+model UserProfile {
+  id               String   @id @default(cuid())
+  name             String?
+  age              Int?
+  occupation       String?
+  financialGoal    String?
+  savingsTarget    Float?
+  paydayDay        Int      @default(25)
+  monthlyRent      Float    @default(8500)
+  criticalBuffer   Float    @default(5000)
+  warningThreshold Float    @default(1.25)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model MerchantAlias {
+  id          String   @id @default(cuid())
+  merchant    String   @unique
+  displayName String
+  explanation String?
+  updatedAt   DateTime @updatedAt
+}
