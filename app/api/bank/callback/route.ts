@@ -30,6 +30,8 @@ export async function GET(req: NextRequest) {
     // Fetch accounts
     const accounts = await fetchAccounts(access_token)
     const accountIds = accounts.map(a => a.id)
+    // Use the first account's financialInstitutionId as the institution identifier
+    const institutionId = accounts[0]?.financialInstitutionId ?? 'tink'
 
     // Save connection
     await prisma.bankConnection.upsert({
@@ -38,11 +40,12 @@ export async function GET(req: NextRequest) {
         status: 'linked',
         accountIds: JSON.stringify(accountIds),
         keys: JSON.stringify({ access_token, refresh_token }),
+        institutionId,
       },
       create: {
         userId,
         requisitionId: code,
-        institutionId: 'tink',
+        institutionId,
         accountIds: JSON.stringify(accountIds),
         status: 'linked',
         keys: JSON.stringify({ access_token, refresh_token }),

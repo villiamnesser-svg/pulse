@@ -8,7 +8,7 @@ export async function GET(req: NextRequest) {
     const connection = await prisma.bankConnection.findFirst({
       where: { userId },
       orderBy: { createdAt: 'desc' },
-      select: { status: true, lastSyncedAt: true, institutionId: true, createdAt: true },
+      select: { id: true, status: true, lastSyncedAt: true, institutionId: true, createdAt: true },
     })
     return NextResponse.json({ connection })
   } catch {

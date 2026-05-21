@@ -89,6 +89,7 @@ export interface TinkAccount {
   id: string
   name: string
   type: string
+  financialInstitutionId?: string
   balances: { booked: { amount: { value: { unscaledValue: number; scale: number }; currencyCode: string } } }
 }
 

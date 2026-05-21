@@ -133,10 +133,25 @@ function EditableField({
 }
 
 interface BankConnection {
-  id: string
+  id?: string
   status: string
   lastSyncedAt: string | null
   institutionId: string
+}
+
+// Map known Tink institution IDs (or fragments) to human-readable names
+function bankDisplayName(institutionId: string): string {
+  const id = institutionId.toLowerCase()
+  if (id.includes('swedbank')) return 'Swedbank'
+  if (id.includes('seb')) return 'SEB'
+  if (id.includes('handels')) return 'Handelsbanken'
+  if (id.includes('nordea')) return 'Nordea'
+  if (id.includes('danske')) return 'Danske Bank'
+  if (id.includes('lansforsakring')) return 'Länsförsäkringar'
+  if (id.includes('sparbank')) return 'Sparbanken'
+  if (id.includes('ikano')) return 'Ikano'
+  if (id === 'tink') return 'Din bank'
+  return 'Din bank'
 }
 
 export default function SettingsPage() {
@@ -381,7 +396,7 @@ export default function SettingsPage() {
                 <div className="space-y-3">
                   <div className="flex items-center gap-2">
                     <div className="w-2 h-2 rounded-full bg-emerald-400" />
-                    <span className="text-sm text-zinc-200 font-medium">Swedbank kopplad</span>
+                    <span className="text-sm text-zinc-200 font-medium">{bankDisplayName(bank.institutionId)} kopplad</span>
                   </div>
                   {bank.lastSyncedAt && (
                     <p className="text-xs text-zinc-500">
