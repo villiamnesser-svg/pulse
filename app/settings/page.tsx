@@ -16,6 +16,8 @@ interface Profile {
   monthlyRent: number
   criticalBuffer: number
   warningThreshold: number
+  isPremium?: boolean
+  premiumUntil?: string | null
 }
 
 type EditingField = keyof Omit<Profile, 'id' | 'createdAt' | 'updatedAt'> | null
@@ -485,21 +487,39 @@ export default function SettingsPage() {
             </div>
 
             {/* Premium link */}
-            <Link
-              href="/premium"
-              className="flex items-center justify-between bg-gradient-to-r from-amber-950/30 to-[#0f0f0f] border border-amber-500/20 rounded-2xl p-4"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center justify-center">
-                  <Zap className="w-4 h-4 text-amber-400" />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-zinc-200">Pulse Premium</p>
-                  <p className="text-[11px] text-zinc-600">Notiser, AI-chat, månadsanalys</p>
-                </div>
-              </div>
-              <span className="text-xs text-amber-400 font-semibold">49 kr/mån →</span>
-            </Link>
+            {(() => {
+              const isPremium = profile?.isPremium
+              const until = profile?.premiumUntil ? new Date(profile.premiumUntil) : null
+              const isTrial = isPremium && until && until > new Date()
+              const daysLeft = isTrial ? Math.ceil((until.getTime() - Date.now()) / 86400000) : 0
+              const isLifetime = isPremium && !until
+
+              return (
+                <Link
+                  href="/premium"
+                  className="flex items-center justify-between bg-gradient-to-r from-amber-950/30 to-[#0f0f0f] border border-amber-500/20 rounded-2xl p-4"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center justify-center">
+                      <Zap className="w-4 h-4 text-amber-400" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-zinc-200">Pulse Premium</p>
+                      <p className="text-[11px] text-zinc-600">
+                        {isTrial
+                          ? `Provperiod — ${daysLeft} dag${daysLeft !== 1 ? 'ar' : ''} kvar`
+                          : isLifetime
+                            ? 'Aktiv — livstid'
+                            : 'Notiser, AI-chat, månadsanalys'}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-xs text-amber-400 font-semibold">
+                    {isPremium ? '✓ Aktiv' : '49 kr/mån →'}
+                  </span>
+                </Link>
+              )
+            })()}
 
             {/* Push info */}
             {pushTest === 'no-sub' && (

@@ -41,8 +41,16 @@ export async function POST(req: NextRequest) {
       ])
     }
 
+    // Give every new user a 7-day free trial
+    const trialEnds = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+    await prisma.userProfile.upsert({
+      where: { userId: user.id },
+      update: { isPremium: true, premiumUntil: trialEnds },
+      create: { userId: user.id, isPremium: true, premiumUntil: trialEnds },
+    })
+
     const token = await signToken({ userId: user.id, email: user.email })
-    const res = NextResponse.json({ ok: true, name: user.name })
+    const res = NextResponse.json({ ok: true, name: user.name, trialDays: 7 })
     res.cookies.set(sessionCookieOptions(token))
     return res
   } catch (err) {

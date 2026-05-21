@@ -51,14 +51,14 @@ export default function PremiumPage() {
             <span className="text-xl text-zinc-400">kr</span>
             <span className="text-sm text-zinc-600">/mån</span>
           </div>
-          <p className="text-xs text-zinc-600 mb-5">Avsluta när som helst</p>
+          <p className="text-xs text-zinc-600 mb-5">7 dagars gratis provperiod · Avsluta när som helst</p>
           <button
             className="w-full bg-amber-500 hover:bg-amber-400 text-black font-bold py-3.5 rounded-2xl transition-colors text-sm"
             onClick={() => alert('Betalning kommer snart — kontakta support för att aktivera.')}
           >
-            Aktivera Premium
+            Prova gratis i 7 dagar
           </button>
-          <p className="text-[10px] text-zinc-700 mt-3">Betalning via App Store (Apple Pay / kort)</p>
+          <p className="text-[10px] text-zinc-700 mt-3">Sedan 49 kr/mån · Betalning via App Store</p>
         </div>
 
         {/* Premium features */}
