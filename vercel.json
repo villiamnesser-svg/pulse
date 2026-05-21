@@ -1,6 +1,7 @@
 {
   "crons": [
     { "path": "/api/bank/sync/cron",  "schedule": "0 5 * * *"  },
+    { "path": "/api/bank/sync/cron",  "schedule": "0 18 * * *" },
     { "path": "/api/heartbeat",  "schedule": "0 7 * * *"  },
     { "path": "/api/heartbeat",  "schedule": "0 12 * * *" },
     { "path": "/api/heartbeat",  "schedule": "0 17 * * *" },
