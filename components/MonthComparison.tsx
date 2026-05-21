@@ -1,7 +1,8 @@
 'use client'
 
+import Link from 'next/link'
 import { useEffect, useState } from 'react'
-import { TrendingDown, TrendingUp } from 'lucide-react'
+import { TrendingDown, TrendingUp, ArrowRight } from 'lucide-react'
 
 interface CompareData {
   thisMonth: { total: number; byCategory: Record<string, number> }
@@ -82,9 +83,14 @@ export default function MonthComparison() {
   return (
     <div className="bg-[#0f0f0f] border border-white/[0.08] rounded-2xl p-4 space-y-4">
       {/* Title */}
-      <p className="text-xs font-semibold text-zinc-500 uppercase tracking-widest">
-        Månad för månad
-      </p>
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold text-zinc-500 uppercase tracking-widest">
+          Månad för månad
+        </p>
+        <Link href="/compare" className="flex items-center gap-1 text-[10px] text-zinc-500 hover:text-zinc-300 transition-colors">
+          Välj månader <ArrowRight className="w-3 h-3" />
+        </Link>
+      </div>
 
       {/* Totals row */}
       <div className="grid grid-cols-2 gap-3">

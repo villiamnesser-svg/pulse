@@ -1118,3 +1118,83 @@ export async function reimbursementMatchSuggestion(userId: string): Promise<Noti
   }
   return null
 }
+
+// ─── VECKOSUMMERING ───────────────────────────────────────────────────────────
+
+// Monday morning weekly recap — how last week went vs average
+export async function mondayWeeklyRecap(userId: string): Promise<Notification | null> {
+  const now = new Date()
+  // Only fire on Mondays
+  if (now.getDay() !== 1) return null
+
+  // Last week: Mon–Sun
+  const lastMonday = new Date(now)
+  lastMonday.setDate(now.getDate() - 7)
+  lastMonday.setHours(0, 0, 0, 0)
+  const lastSunday = new Date(now)
+  lastSunday.setDate(now.getDate() - 1)
+  lastSunday.setHours(23, 59, 59, 999)
+
+  // 8 weeks before last week for average
+  const eightWeeksAgo = new Date(lastMonday)
+  eightWeeksAgo.setDate(lastMonday.getDate() - 56)
+
+  const [lastWeekTxs, historicTxs] = await Promise.all([
+    prisma.transaction.findMany({
+      where: {
+        userId, isIncome: false,
+        date: { gte: lastMonday, lte: lastSunday },
+        NOT: { category: { in: ['utlägg', 'återbetalning', 'hyra'] } },
+      },
+      select: { amount: true },
+    }),
+    prisma.transaction.findMany({
+      where: {
+        userId, isIncome: false,
+        date: { gte: eightWeeksAgo, lt: lastMonday },
+        NOT: { category: { in: ['utlägg', 'återbetalning', 'hyra'] } },
+      },
+      select: { date: true, amount: true },
+    }),
+  ])
+
+  if (lastWeekTxs.length === 0) return null
+
+  const lastWeekTotal = lastWeekTxs.reduce((s, t) => s + Math.abs(t.amount), 0)
+
+  // Calculate weekly average from historic data
+  const weekMap: Record<string, number> = {}
+  for (const t of historicTxs) {
+    const d = new Date(t.date)
+    const wMon = new Date(d)
+    wMon.setDate(d.getDate() - ((d.getDay() + 6) % 7))
+    const key = wMon.toISOString().slice(0, 10)
+    weekMap[key] = (weekMap[key] ?? 0) + Math.abs(t.amount)
+  }
+  const weeklyAmounts = Object.values(weekMap).filter(v => v > 200)
+  if (weeklyAmounts.length < 2) return null
+
+  const avgWeekly = weeklyAmounts.reduce((s, v) => s + v, 0) / weeklyAmounts.length
+  const diff = lastWeekTotal - avgWeekly
+  const diffPct = Math.round(Math.abs(diff / avgWeekly) * 100)
+  const better = diff < 0
+
+  const fmt = (n: number) => Math.round(n).toLocaleString('sv-SE')
+
+  if (better) {
+    return {
+      title: 'Pulse — Veckosummering 📊',
+      body: `Förra veckan: ${fmt(lastWeekTotal)} kr — ${diffPct}% under ditt snitt (${fmt(avgWeekly)} kr). Bra jobbat!`,
+    }
+  } else if (diffPct > 30) {
+    return {
+      title: 'Pulse — Veckosummering 📊',
+      body: `Förra veckan: ${fmt(lastWeekTotal)} kr — ${diffPct}% över ditt snitt (${fmt(avgWeekly)} kr). Tänk på det den här veckan.`,
+    }
+  } else {
+    return {
+      title: 'Pulse — Veckosummering 📊',
+      body: `Förra veckan: ${fmt(lastWeekTotal)} kr — ungefär som vanligt (snitt ${fmt(avgWeekly)} kr/vecka).`,
+    }
+  }
+}

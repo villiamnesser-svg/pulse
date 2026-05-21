@@ -1,6 +1,7 @@
 'use client'
 
-import { RefreshCw, AlertCircle, Zap, Calendar } from 'lucide-react'
+import Link from 'next/link'
+import { RefreshCw, AlertCircle, Zap, Calendar, ArrowRight } from 'lucide-react'
 
 interface Subscription {
   merchant: string
@@ -76,9 +77,9 @@ export default function SubscriptionRadar({ subscriptions, loading, aliasMap }: 
             Prenumerationer
           </h3>
         </div>
-        <span className="text-[10px] text-zinc-600 bg-[#161616] px-2 py-0.5 rounded-full border border-white/[0.05]">
-          {subscriptions.length} aktiva
-        </span>
+        <Link href="/subscriptions" className="flex items-center gap-1 text-[10px] text-zinc-500 hover:text-zinc-300 transition-colors">
+          Alla <ArrowRight className="w-3 h-3" />
+        </Link>
       </div>
 
       <ul className="space-y-2 mb-4">

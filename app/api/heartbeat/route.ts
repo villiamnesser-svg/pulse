@@ -39,6 +39,7 @@ import {
   bestWeekRecord,
   unreimbursedOutlayAlert,
   reimbursementMatchSuggestion,
+  mondayWeeklyRecap,
   type Notification,
 } from '@/lib/notifications'
 import { canCallAI, recordAICall } from '@/lib/ai-budget'
@@ -397,6 +398,12 @@ async function runForUser(userId: string) {
 
   if (weekday >= 3 && hour >= 9 && hour <= 20) {
     await maybePush(userId, 'best-week', await bestWeekRecord(userId), todayStart, pushed, sentToday)
+  }
+
+  // ── PRIORITY 25: Monday weekly recap ──────────────────────────────────────
+
+  if (weekday === 1 && hour >= 8 && hour <= 10) {
+    await maybePush(userId, 'weekly-recap', await mondayWeeklyRecap(userId), todayStart, pushed, sentToday)
   }
 
   // ── PRIORITY 16: Claude contextual push ───────────────────────────────────

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Activity, ChevronLeft, FileText, TrendingUp, TrendingDown, Minus, Sparkles, Loader2, ChevronDown, ChevronUp } from 'lucide-react'
+import { Activity, ChevronLeft, FileText, TrendingUp, TrendingDown, Minus, Sparkles, Loader2, ChevronDown, ChevronUp, Download } from 'lucide-react'
 
 interface Transaction {
   id: string
@@ -167,6 +167,14 @@ export default function ReportPage() {
   const fmt = (n: number) => Math.round(n).toLocaleString('sv-SE')
   const displayName = (merchant: string) => aliases.get(merchant) ?? merchant
 
+  function downloadCsv() {
+    const [year, month] = selectedMonth.split('-')
+    const from = `${year}-${month}-01`
+    const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate()
+    const to = `${year}-${month}-${String(lastDay).padStart(2, '0')}`
+    window.location.href = `/api/export?format=csv&from=${from}&to=${to}`
+  }
+
   return (
     <div className="min-h-screen bg-[#080808] pb-24">
       <header className="bg-[#080808]/80 backdrop-blur-xl border-b border-white/[0.06] px-4 py-3 flex items-center gap-3 sticky top-0 sm:top-12 z-30">
@@ -176,6 +184,14 @@ export default function ReportPage() {
         <Activity className="w-4 h-4 text-emerald-500" />
         <h1 className="text-sm font-black tracking-widest text-white uppercase flex-1">PULSE</h1>
         <FileText className="w-4 h-4 text-zinc-600" />
+        <button
+          onClick={downloadCsv}
+          title="Ladda ner CSV"
+          className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-200 bg-[#161616] hover:bg-[#1c1c1c] border border-white/[0.06] px-2.5 py-1.5 rounded-xl transition-all"
+        >
+          <Download className="w-3.5 h-3.5" />
+          CSV
+        </button>
       </header>
 
       <main className="max-w-xl mx-auto px-4 py-6 space-y-5">

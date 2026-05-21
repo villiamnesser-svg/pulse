@@ -2,15 +2,15 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { House, List, CalendarDays, MessageCircle, Target, FileText } from 'lucide-react'
+import { House, List, CalendarDays, MessageCircle, Sparkles, Trophy } from 'lucide-react'
 
 const NAV_ITEMS = [
   { href: '/',             label: 'Hem',       Icon: House },
   { href: '/transactions', label: 'Historik',  Icon: List },
-  { href: '/budget',       label: 'Budget',    Icon: Target },
+  { href: '/goals',        label: 'Mål',       Icon: Trophy },
   { href: '/calendar',     label: 'Kalender',  Icon: CalendarDays },
   { href: '/chat',         label: 'Fråga',     Icon: MessageCircle },
-  { href: '/report',       label: 'Rapport',   Icon: FileText },
+  { href: '/report',       label: 'Rapport',   Icon: Sparkles },
 ]
 
 export default function MobileNav() {
