@@ -163,6 +163,7 @@ export default function SettingsPage() {
   const [bankLoading, setBankLoading] = useState(false)
   const [syncState, setSyncState] = useState<'idle' | 'syncing' | 'done' | 'error'>('idle')
   const [syncResult, setSyncResult] = useState<{ imported: number } | null>(null)
+  const [syncError, setSyncError] = useState<string | null>(null)
   const [pushTest, setPushTest] = useState<'idle' | 'sending' | 'ok' | 'error' | 'no-sub'>('idle')
 
   async function testPush() {
@@ -217,18 +218,21 @@ export default function SettingsPage() {
 
   async function triggerSync() {
     setSyncState('syncing')
+    setSyncError(null)
     try {
       const res = await fetch('/api/bank/sync', { method: 'POST' })
       const data = await res.json() as { imported: number; ok: boolean; error?: string }
+      // Always refresh bank status after sync attempt
+      fetch('/api/bank/status').then(r => r.json()).then(d => setBank(d.connection)).catch(() => {})
       if (data.ok) {
         setSyncResult({ imported: data.imported })
         setSyncState('done')
-        // Refresh bank status
-        fetch('/api/bank/status').then(r => r.json()).then(d => setBank(d.connection)).catch(() => {})
       } else {
+        setSyncError(data.error ?? `HTTP ${res.status}`)
         setSyncState('error')
       }
-    } catch {
+    } catch (err) {
+      setSyncError(String(err))
       setSyncState('error')
     }
   }
@@ -427,7 +431,9 @@ export default function SettingsPage() {
                     </button>
                   </div>
                   {syncState === 'error' && (
-                    <p className="text-xs text-red-400">Synkfel — testa igen eller koppla om banken.</p>
+                    <p className="text-xs text-red-400">
+                      {syncError ?? 'Synkfel — testa igen eller koppla om banken.'}
+                    </p>
                   )}
                 </div>
               )}
