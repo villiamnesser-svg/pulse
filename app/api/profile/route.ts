@@ -1,25 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getUserId } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 
-export async function PATCH(req: NextRequest) {
+export async function GET(req: NextRequest) {
   try {
-    const body = (await req.json()) as Record<string, unknown>
-    const profile = await prisma.userProfile.findFirst()
-    if (profile) {
-      await prisma.userProfile.update({ where: { id: profile.id }, data: body })
-    } else {
-      await prisma.userProfile.create({ data: body as Parameters<typeof prisma.userProfile.create>[0]['data'] })
-    }
-    return NextResponse.json({ ok: true })
-  } catch (err) {
-    console.error('Profile PATCH error:', err)
-    return NextResponse.json({ error: 'Failed to update profile' }, { status: 500 })
-  }
-}
-
-export async function GET() {
-  try {
-    const profile = await prisma.userProfile.findFirst()
+    const userId = await getUserId(req)
+    const profile = await prisma.userProfile.findFirst({ where: { userId } })
     return NextResponse.json(profile ?? null)
   } catch (err) {
     console.error('Profile GET error:', err)
@@ -27,19 +13,15 @@ export async function GET() {
   }
 }
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
+    const userId = await getUserId(req)
     const body = (await req.json()) as {
-      name?: string
-      age?: number
-      occupation?: string
-      financialGoal?: string
-      savingsTarget?: number
-      paydayDay?: number
-      monthlyRent?: number
+      name?: string; age?: number; occupation?: string
+      financialGoal?: string; savingsTarget?: number; paydayDay?: number; monthlyRent?: number
     }
 
-    const existing = await prisma.userProfile.findFirst()
+    const existing = await prisma.userProfile.findFirst({ where: { userId } })
 
     if (existing) {
       const updated = await prisma.userProfile.update({
@@ -58,6 +40,7 @@ export async function POST(req: Request) {
     } else {
       const created = await prisma.userProfile.create({
         data: {
+          userId,
           name: body.name,
           age: body.age,
           occupation: body.occupation,
@@ -72,5 +55,22 @@ export async function POST(req: Request) {
   } catch (err) {
     console.error('Profile POST error:', err)
     return NextResponse.json({ error: 'Failed to save profile' }, { status: 500 })
+  }
+}
+
+export async function PATCH(req: NextRequest) {
+  try {
+    const userId = await getUserId(req)
+    const body = (await req.json()) as Record<string, unknown>
+    const profile = await prisma.userProfile.findFirst({ where: { userId } })
+    if (profile) {
+      await prisma.userProfile.update({ where: { id: profile.id }, data: body })
+    } else {
+      await prisma.userProfile.create({ data: { userId, ...(body as object) } as Parameters<typeof prisma.userProfile.create>[0]['data'] })
+    }
+    return NextResponse.json({ ok: true })
+  } catch (err) {
+    console.error('Profile PATCH error:', err)
+    return NextResponse.json({ error: 'Failed to update profile' }, { status: 500 })
   }
 }

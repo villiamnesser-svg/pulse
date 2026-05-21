@@ -138,11 +138,12 @@ export default function VelocityCard({ velocity, loading }: VelocityCardProps) {
 
       {/* Main row: ring + numbers */}
       <div className="flex items-center gap-6 mb-6">
-        {/* Circular ring */}
+        {/* Circular ring — shows budget consumption, center shows same */}
         <div className="relative flex-shrink-0">
           <CircularProgress progress={budgetProgress} color={cfg.ring} bgColor={cfg.ringBg} />
-          <div className="absolute inset-0 flex items-center justify-center">
-            <span className="text-xs font-bold text-zinc-400">{Math.round(monthProgress)}%</span>
+          <div className="absolute inset-0 flex flex-col items-center justify-center">
+            <span className="text-xs font-bold text-zinc-300">{Math.round(budgetProgress)}%</span>
+            <span className="text-[9px] text-zinc-600 leading-tight">av snitt</span>
           </div>
         </div>
 

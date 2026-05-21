@@ -15,7 +15,7 @@ const KNOWN_SUBSCRIPTIONS = [
 ]
 
 function isSimilarAmount(a: number, b: number): boolean {
-  return Math.abs(a - b) < 5 // within 5 SEK
+  return Math.abs(a - b) < 5
 }
 
 function daysDiff(a: Date, b: Date): number {
@@ -28,17 +28,15 @@ function isKnownSubscription(merchant: string): boolean {
   )
 }
 
-export async function detectSubscriptions(): Promise<Subscription[]> {
-  // Only look at last 6 months to keep this fast
+export async function detectSubscriptions(userId = 'local'): Promise<Subscription[]> {
   const since = new Date()
   since.setMonth(since.getMonth() - 6)
   const transactions = await prisma.transaction.findMany({
-    where: { isIncome: false, date: { gte: since } },
+    where: { userId, isIncome: false, date: { gte: since } },
     orderBy: { date: 'asc' },
     select: { merchant: true, amount: true, date: true },
   })
 
-  // Group by merchant
   const merchantMap = new Map<string, typeof transactions>()
   for (const tx of transactions) {
     const existing = merchantMap.get(tx.merchant) ?? []
@@ -51,7 +49,6 @@ export async function detectSubscriptions(): Promise<Subscription[]> {
   for (const [merchant, txList] of merchantMap.entries()) {
     if (txList.length < 2) continue
 
-    // Check for ~30-day recurring pattern
     let recurringCount = 0
     let lastAmount = txList[txList.length - 1].amount
 
@@ -77,15 +74,14 @@ export async function detectSubscriptions(): Promise<Subscription[]> {
   return subscriptions.sort((a, b) => b.amount - a.amount)
 }
 
-// Returns subscriptions that were charged in the last 24 hours
-export async function getChargedToday(): Promise<Subscription[]> {
+export async function getChargedToday(userId = 'local'): Promise<Subscription[]> {
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000)
   const recentTx = await prisma.transaction.findMany({
-    where: { date: { gte: since }, isIncome: false },
+    where: { userId, date: { gte: since }, isIncome: false },
     orderBy: { date: 'desc' },
   })
 
-  const all = await detectSubscriptions()
+  const all = await detectSubscriptions(userId)
   const recentMerchants = new Set(recentTx.map((t) => t.merchant))
   return all.filter((s) => recentMerchants.has(s.merchant))
 }

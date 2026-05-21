@@ -77,23 +77,29 @@ export default function InsightFeed() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    void fetchInsights()
-    void fetchPatterns()
+    void fetchAll()
   }, [])
 
-  async function fetchInsights() {
+  async function fetchAll() {
     try {
-      const res = await fetch('/api/insights')
-      if (!res.ok) throw new Error('Failed')
-      const data = (await res.json()) as Insight[]
-      // Sort by priority type, then by date
-      const sorted = [...data].sort((a, b) => {
-        const ap = PRIORITY_ORDER.indexOf(a.type)
-        const bp = PRIORITY_ORDER.indexOf(b.type)
-        if (ap !== bp) return (ap === -1 ? 99 : ap) - (bp === -1 ? 99 : bp)
-        return new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime()
-      })
-      setInsights(sorted)
+      // Fetch both in parallel and wait for both before clearing loading state
+      const [insightRes, patternRes] = await Promise.all([
+        fetch('/api/insights'),
+        fetch('/api/patterns').catch(() => null),
+      ])
+      if (insightRes.ok) {
+        const data = (await insightRes.json()) as Insight[]
+        const sorted = [...data].sort((a, b) => {
+          const ap = PRIORITY_ORDER.indexOf(a.type)
+          const bp = PRIORITY_ORDER.indexOf(b.type)
+          if (ap !== bp) return (ap === -1 ? 99 : ap) - (bp === -1 ? 99 : bp)
+          return new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime()
+        })
+        setInsights(sorted)
+      }
+      if (patternRes?.ok) {
+        setPatterns((await patternRes.json()) as WeekdayPattern[])
+      }
     } catch (err) {
       console.error(err)
     } finally {
@@ -101,20 +107,15 @@ export default function InsightFeed() {
     }
   }
 
-  async function fetchPatterns() {
-    try {
-      const res = await fetch('/api/patterns')
-      if (res.ok) setPatterns((await res.json()) as WeekdayPattern[])
-    } catch { /* ignore */ }
-  }
-
   async function markRead(id: string) {
     try {
-      await fetch('/api/insights', {
+      // Server-first: update DB before updating UI to avoid ghost read state
+      const res = await fetch('/api/insights', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id }),
       })
+      if (!res.ok) throw new Error('Failed')
       setInsights(prev => prev.map(ins => ins.id === id ? { ...ins, read: true } : ins))
     } catch (err) { console.error(err) }
   }

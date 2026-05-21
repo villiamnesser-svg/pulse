@@ -37,12 +37,13 @@ interface CategoryGroup {
   category: string
   total: number
   count: number
-  merchants: { merchant: string; amount: number }[]
+  merchants: { merchant: string; displayName: string; amount: number }[]
 }
 
 const CATEGORIES = [
   'mat', 'restaurang', 'transport', 'prenumeration', 'hyra',
   'nöje', 'hälsa', 'kläder', 'elektronik', 'kontantuttag', 'inkomst', 'övrigt',
+  'utlägg', 'återbetalning',
 ]
 
 const CAT_COLOR: Record<string, string> = {
@@ -58,6 +59,8 @@ const CAT_COLOR: Record<string, string> = {
   kontantuttag: 'bg-zinc-700/60 text-zinc-300',
   inkomst: 'bg-emerald-900/60 text-emerald-300',
   övrigt: 'bg-zinc-800/60 text-zinc-400',
+  utlägg: 'bg-amber-900/60 text-amber-300',
+  återbetalning: 'bg-emerald-900/60 text-emerald-300',
 }
 
 const CAT_BAR: Record<string, string> = {
@@ -65,6 +68,8 @@ const CAT_BAR: Record<string, string> = {
   prenumeration: 'bg-purple-500', hyra: 'bg-red-500', nöje: 'bg-pink-500',
   hälsa: 'bg-teal-500', kläder: 'bg-yellow-500', elektronik: 'bg-cyan-500',
   kontantuttag: 'bg-zinc-500', inkomst: 'bg-emerald-500', övrigt: 'bg-zinc-600',
+  utlägg: 'bg-amber-500',
+  återbetalning: 'bg-emerald-400',
 }
 
 const MONTHS_SV = ['Januari','Februari','Mars','April','Maj','Juni','Juli','Augusti','September','Oktober','November','December']
@@ -102,6 +107,7 @@ interface EditorState {
   explanation: string
   category: string
   saved: boolean
+  saving: boolean
 }
 
 export default function TransactionsPage() {
@@ -160,6 +166,7 @@ export default function TransactionsPage() {
         explanation: alias?.explanation ?? tx.note ?? '',
         category: tx.category ?? 'övrigt',
         saved: false,
+        saving: false,
       },
     }))
     setEditingId(tx.id)
@@ -167,7 +174,8 @@ export default function TransactionsPage() {
 
   async function saveEditor(tx: Transaction) {
     const e = editor[tx.id]
-    if (!e) return
+    if (!e || e.saving || e.saved) return
+    setEditor((prev) => ({ ...prev, [tx.id]: { ...e, saving: true } }))
     try {
       await Promise.all([
         fetch('/api/merchants', {
@@ -189,9 +197,12 @@ export default function TransactionsPage() {
       setTransactions((prev) => prev.map((t) =>
         t.id === tx.id ? { ...t, note: e.explanation || null, category: e.category } : t
       ))
-      setEditor((prev) => ({ ...prev, [tx.id]: { ...e, saved: true } }))
+      setEditor((prev) => ({ ...prev, [tx.id]: { ...e, saved: true, saving: false } }))
       setTimeout(() => setEditingId(null), 600)
-    } catch (err) { console.error(err) }
+    } catch (err) {
+      console.error(err)
+      setEditor((prev) => ({ ...prev, [tx.id]: { ...e, saving: false } }))
+    }
   }
 
   // ── Derived data ──────────────────────────────────────────────
@@ -236,11 +247,12 @@ export default function TransactionsPage() {
       if (ex) {
         ex.total += Math.abs(tx.amount)
         ex.count++
-        const m = ex.merchants.find((x) => x.merchant === name)
+        // Key by raw merchant so we can pass it to the search filter correctly
+        const m = ex.merchants.find((x) => x.merchant === tx.merchant)
         if (m) m.amount += Math.abs(tx.amount)
-        else ex.merchants.push({ merchant: name, amount: Math.abs(tx.amount) })
+        else ex.merchants.push({ merchant: tx.merchant, displayName: name, amount: Math.abs(tx.amount) })
       } else {
-        map.set(cat, { category: cat, total: Math.abs(tx.amount), count: 1, merchants: [{ merchant: name, amount: Math.abs(tx.amount) }] })
+        map.set(cat, { category: cat, total: Math.abs(tx.amount), count: 1, merchants: [{ merchant: tx.merchant, displayName: name, amount: Math.abs(tx.amount) }] })
       }
     }
     return Array.from(map.values())
@@ -253,7 +265,7 @@ export default function TransactionsPage() {
   return (
     <div className="min-h-screen bg-[#080808] pb-24">
       {/* Header */}
-      <header className="bg-[#080808]/80 backdrop-blur-xl border-b border-white/[0.06] px-4 py-3 flex items-center gap-4 sticky top-0 z-50">
+      <header className="bg-[#080808]/80 backdrop-blur-xl border-b border-white/[0.06] px-4 py-3 flex items-center gap-4 sticky top-0 sm:top-12 z-30">
         <Link href="/" className="text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1.5 text-sm">
           <ChevronLeft className="w-4 h-4" />
           Dashboard
@@ -385,15 +397,21 @@ export default function TransactionsPage() {
                         <div className="flex items-center gap-2">
                           <p className="text-sm font-medium text-zinc-100 truncate">{displayName}</p>
                           <span className={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 ${catColor}`}>{tx.category ?? 'övrigt'}</span>
+                          {tx.category === 'utlägg' && (
+                            <span className="text-[10px] text-amber-400/70 ml-1">↩ utlägg</span>
+                          )}
                         </div>
                         {explanation ? (
                           <p className="text-xs text-zinc-500 mt-0.5 truncate">{explanation}</p>
-                        ) : alias?.displayName !== tx.merchant ? (
-                          <p className="text-xs text-zinc-700 mt-0.5 truncate">{tx.merchant}</p>
+                        ) : alias?.displayName && alias.displayName !== tx.merchant ? (
+                          <p className="text-xs text-zinc-700 mt-0.5 flex items-center gap-1 opacity-60">
+                            <PenLine className="w-2.5 h-2.5" />
+                            {tx.merchant}
+                          </p>
                         ) : (
                           <p className="text-xs text-zinc-700 mt-0.5 flex items-center gap-1">
                             <PenLine className="w-2.5 h-2.5" />
-                            Klicka för att förklara
+                            Tryck för att byta namn
                           </p>
                         )}
                       </div>
@@ -412,7 +430,7 @@ export default function TransactionsPage() {
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           {/* Display name */}
                           <div>
-                            <label className="text-xs text-zinc-500 font-medium block mb-1">Visa som</label>
+                            <label className="text-xs text-zinc-500 font-medium block mb-1">Byt namn (visas överallt i appen)</label>
                             <input
                               autoFocus
                               type="text"
@@ -461,13 +479,16 @@ export default function TransactionsPage() {
                           </button>
                           <button
                             onClick={() => void saveEditor(tx)}
+                            disabled={e.saving || e.saved}
                             className={`flex items-center gap-1.5 text-xs px-4 py-1.5 rounded-xl font-medium transition-all ${
                               e.saved
                                 ? 'bg-emerald-900/60 border border-emerald-500/30 text-emerald-400'
-                                : 'bg-emerald-950/50 hover:bg-emerald-950/80 border border-emerald-500/20 text-emerald-400'
+                                : e.saving
+                                  ? 'opacity-50 cursor-not-allowed bg-emerald-950/50 border border-emerald-500/20 text-emerald-400'
+                                  : 'bg-emerald-950/50 hover:bg-emerald-950/80 border border-emerald-500/20 text-emerald-400'
                             }`}
                           >
-                            {e.saved ? <><Check className="w-3.5 h-3.5" /> Sparat</> : 'Spara'}
+                            {e.saved ? <><Check className="w-3.5 h-3.5" /> Sparat</> : e.saving ? 'Sparar…' : 'Spara'}
                           </button>
                         </div>
                       </div>
@@ -586,7 +607,7 @@ export default function TransactionsPage() {
                           onClick={() => { setSearch(m.merchant); setView('lista') }}
                           className="w-full flex items-center justify-between px-4 py-2.5 border-b border-white/[0.04] last:border-0 hover:bg-white/[0.02] transition-colors"
                         >
-                          <span className="text-sm text-zinc-300 hover:text-zinc-100 truncate text-left">{m.merchant}</span>
+                          <span className="text-sm text-zinc-300 hover:text-zinc-100 truncate text-left">{m.displayName}</span>
                           <span className="text-sm text-zinc-500 shrink-0 ml-3">{fmt(m.amount)} kr</span>
                         </button>
                       ))}

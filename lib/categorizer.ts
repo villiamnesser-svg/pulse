@@ -14,7 +14,14 @@ export type Category =
   | 'elektronik'
   | 'kontantuttag'
   | 'inkomst'
+  | 'träning'
+  | 'resor'
+  | 'skönhet'
+  | 'hem'
+  | 'tjänster'
   | 'övrigt'
+  | 'utlägg'
+  | 'återbetalning'
 
 export interface CategorizedTransaction extends ParsedTransaction {
   category: Category
@@ -29,7 +36,27 @@ const anthropic = new Anthropic({
 
 async function categorizeMerchants(merchants: string[]): Promise<Category[]> {
   const prompt = `Du är en transaktionskategoriserare för svenska banktransaktioner.
-Kategorisera varje transaktion i EN av dessa kategorier: mat, restaurang, transport, prenumeration, hyra, nöje, hälsa, kläder, elektronik, kontantuttag, inkomst, övrigt.
+Kategorisera varje transaktion i EN av dessa kategorier: mat, restaurang, transport, prenumeration, hyra, nöje, hälsa, kläder, elektronik, kontantuttag, inkomst, träning, resor, skönhet, hem, tjänster, övrigt.
+
+Riktlinjer:
+- mat: mataffärer (ICA, Coop, Willys, Lidl, Hemköp, Netto, Saluhallen)
+- restaurang: restauranger, caféer, barer, McDonalds, Max, Subway, Espresso House, Wayne's, Starbucks
+- transport: SL, Uber, Bolt, Taxi, parkering, bensin, Circle K, OKQ8, Preem, biluthyrning
+- prenumeration: Spotify, Netflix, HBO, Disney+, YouTube, Apple, Microsoft, Dropbox, Adobe, Tele2, Telia, Tre, Comviq, 3, Telenor
+- hyra: hyra, bostadsrättsavgift, el, vatten, hemförsäkring, bredband
+- nöje: bio, teater, konserter, spel, Steam, gaming
+- hälsa: apotek, tandläkare, läkare, sjukvård, medicin, Apoteket, Kronans Apotek
+- kläder: H&M, Zara, Weekday, Asos, NA-KD, kläder, skor
+- elektronik: Elgiganten, Webhallen, Apple Store, datorer, telefoner
+- träning: gym, SATS, Actic, Nordic Wellness, löparskor, träningsutrustning, Intersport
+- resor: flyg, hotell, SJ, Booking, Airbnb, semester
+- skönhet: frisör, naglar, spa, kosmetika, Kicks, LYKO
+- hem: IKEA, Clas Ohlson, Jula, byggmaterial, Biltema, hemredskap
+- tjänster: försäkringar, banker, avgifter, Kivra, Swish-avgifter, administrativa tjänster
+- kontantuttag: Bankomat, Uttag
+- inkomst: lön, bidrag, swish-inkomst (positiva belopp)
+- utlägg: pengar du lagt ut åt någon annan (ska betalas tillbaka)
+- återbetalning: inkommande pengar som är återbetalning av utlägg (inte riktig inkomst)
 
 Transaktioner (JSON-array med merchant-namn):
 ${JSON.stringify(merchants)}
@@ -37,7 +64,7 @@ ${JSON.stringify(merchants)}
 Svara ENBART med en JSON-array av kategorier i samma ordning. Exempel: ["mat","restaurang","transport"]`
 
   const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
+    model: 'claude-3-5-haiku-20241022',
     max_tokens: 1024,
     messages: [{ role: 'user', content: prompt }],
   })
@@ -57,33 +84,35 @@ Svara ENBART med en JSON-array av kategorier i samma ordning. Exempel: ["mat","r
 }
 
 export async function categorizeBatch(
-  transactions: ParsedTransaction[]
+  transactions: ParsedTransaction[],
+  userId = 'local'
 ): Promise<CategorizedTransaction[]> {
   const BATCH_SIZE = 20
 
-  // Separate already-cached vs uncached merchants
   const uncachedMerchants: string[] = []
 
   for (let i = 0; i < transactions.length; i++) {
     const { merchant, isIncome } = transactions[i]
     if (isIncome) {
-      merchantCache.set(merchant, 'inkomst')
+      // Only set inkomst if not already cached as återbetalning
+      if (!merchantCache.has(merchant)) {
+        merchantCache.set(merchant, 'inkomst')
+      }
     } else if (!merchantCache.has(merchant)) {
       uncachedMerchants.push(merchant)
     }
   }
 
-  // Check DB for existing categories for these merchants
   const uniqueUncached = [...new Set(uncachedMerchants)]
 
   if (uniqueUncached.length > 0) {
     const existingTx = await prisma.transaction.findMany({
-      where: { merchant: { in: uniqueUncached }, category: { not: null } },
+      where: { userId, merchant: { in: uniqueUncached }, category: { not: null } },
       select: { merchant: true, category: true },
       distinct: ['merchant'],
     })
     existingTx.forEach((tx) => {
-      if (tx.category) merchantCache.set(tx.merchant, tx.category as Category)
+      if (tx.category && tx.category !== 'övrigt') merchantCache.set(tx.merchant, tx.category as Category)
     })
   }
 

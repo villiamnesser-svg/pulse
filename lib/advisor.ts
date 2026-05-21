@@ -20,16 +20,14 @@ export function generateRuleBasedPushes(
   if (alreadySentToday >= maxPerDay) return decisions
 
   const now = new Date()
-  const weekday = now.getDay() // 0=sun, 5=fri, 6=sat
+  const weekday = now.getDay()
 
-  // Anomalies — always highest priority
   for (const anomaly of anomalies.slice(0, 1)) {
     decisions.push({ send: true, title: 'Pulse — Avvikelse', body: anomaly.context })
   }
 
   if (alreadySentToday + decisions.length >= maxPerDay) return decisions
 
-  // CRITICAL velocity
   if (velocity.level === 'CRITICAL') {
     const daily = Math.round(Math.abs(velocity.dailyBudgetRemaining))
     const days = velocity.daysUntilPayday
@@ -47,41 +45,37 @@ export function generateRuleBasedPushes(
 
   if (alreadySentToday + decisions.length >= maxPerDay) return decisions
 
-  // Friday budget nudge
   if (weekday === 5 && velocity.level !== 'SAFE') {
     const daily = Math.round(velocity.dailyBudgetRemaining)
     decisions.push({
       send: true,
       title: 'Pulse — Fredagskoll',
-      body: `Helgen kostar. Du har ${daily} kr/dag kvar till löning. Kul helg!`,
+      body: `Helgen kostar. Du har ${daily} kr/dag kvar till löning.`,
     })
   }
 
-  // Monday positive check
   if (weekday === 1 && velocity.level === 'SAFE') {
     const saved = Math.round(velocity.baselineMonthly - velocity.projectedMonthTotal)
     if (saved > 500) {
       decisions.push({
         send: true,
         title: 'Pulse — Bra vecka',
-        body: `Ny vecka, bra start. Du ligger ${saved.toLocaleString('sv-SE')} kr under ditt snitt den här månaden.`,
+        body: `Ny vecka, bra start. Du ligger ${saved.toLocaleString('sv-SE')} kr under ditt snitt.`,
       })
     }
   }
 
-  // Sunday calm notification — the push banks never send
   if (weekday === 0 && velocity.level === 'SAFE') {
     const balance = Math.round(velocity.currentBalance)
     const days = velocity.daysUntilPayday
     const CRITICAL_BUFFER = parseInt(process.env.CRITICAL_BUFFER ?? '5000', 10)
     if (balance > CRITICAL_BUFFER + 3000) {
       const messages = [
-        `Lugn vecka ekonomiskt. Du har ${balance.toLocaleString('sv-SE')} kr kvar och ${days} dagar till löning. Inget att oroa dig för.`,
-        `Du klarar det utan att ändra något. ${balance.toLocaleString('sv-SE')} kr kvar och ${days} dagar till lön. Bra jobbat.`,
-        `Saldo ser stabilt ut inför nästa vecka. ${balance.toLocaleString('sv-SE')} kr och ${days} dagar till löning. Fortsätt som du gör.`,
+        `Lugn vecka ekonomiskt. Du har ${balance.toLocaleString('sv-SE')} kr kvar och ${days} dagar till löning.`,
+        `Du klarar det utan att ändra något. ${balance.toLocaleString('sv-SE')} kr och ${days} dagar till lön.`,
+        `Saldo ser stabilt ut. ${balance.toLocaleString('sv-SE')} kr och ${days} dagar till löning.`,
       ]
-      const pick = messages[Math.floor(Math.random() * messages.length)]
-      decisions.push({ send: true, title: 'Pulse', body: pick })
+      decisions.push({ send: true, title: 'Pulse', body: messages[Math.floor(Math.random() * messages.length)] })
     }
   }
 
@@ -91,83 +85,65 @@ export function generateRuleBasedPushes(
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
-  timeout: 10000,
+  timeout: 15000,
 })
 
-const WEEKDAY_NAMES = ['måndag', 'tisdag', 'onsdag', 'torsdag', 'fredag', 'lördag', 'söndag']
+const WEEKDAY_NAMES = ['söndag', 'måndag', 'tisdag', 'onsdag', 'torsdag', 'fredag', 'lördag']
 
 export async function generateAdvice(
   velocity: VelocityResult,
-  categories: CategoryBreakdown[]
+  categories: CategoryBreakdown[],
+  userId = 'local'
 ): Promise<string> {
   const today = new Date()
-  const jsDay = today.getDay() // 0=Sunday
-  const weekday = WEEKDAY_NAMES[jsDay === 0 ? 6 : jsDay - 1]
+  const weekday = WEEKDAY_NAMES[today.getDay()]
 
-  // Find anomalies — categories significantly over baseline
   const anomalies = categories
     .filter((c) => c.baseline > 0 && c.amount > c.baseline * 1.3)
-    .map(
-      (c) =>
-        `${c.category}: ${Math.round(c.amount).toLocaleString('sv-SE')} kr (snitt ${Math.round(c.baseline).toLocaleString('sv-SE')} kr)`
-    )
+    .map((c) => `${c.category}: ${Math.round(c.amount).toLocaleString('sv-SE')} kr (snitt ${Math.round(c.baseline).toLocaleString('sv-SE')} kr)`)
 
   const topCategories = categories
     .slice(0, 3)
     .map((c) => `${c.category}: ${Math.round(c.amount).toLocaleString('sv-SE')} kr`)
     .join(', ')
 
-  // Fetch recent transactions that have notes
   const notedTransactions = await prisma.transaction.findMany({
-    where: { note: { not: null } },
+    where: { userId, note: { not: null } },
     orderBy: { date: 'desc' },
     take: 20,
     select: { merchant: true, note: true },
   })
 
-  const notesContext =
-    notedTransactions.length > 0
-      ? `\nAnvändaren har förklarat dessa transaktioner:\n${notedTransactions
-          .map((t) => `- ${t.merchant}: ${t.note}`)
-          .join('\n')}`
-      : ''
+  const profile = await prisma.userProfile.findFirst({ where: { userId } })
+  const aliases = await prisma.merchantAlias.findMany({ where: { userId } })
 
-  // Fetch user profile
-  const profile = await prisma.userProfile.findFirst()
+  const notesContext = notedTransactions.length > 0
+    ? `\nFörklarade transaktioner:\n${notedTransactions.map((t) => `- ${t.merchant}: ${t.note}`).join('\n')}`
+    : ''
 
-  // Fetch merchant aliases for context
-  const aliases = await prisma.merchantAlias.findMany()
-  const aliasContext = aliases
-    .filter((a) => a.explanation)
-    .map((a) => `${a.merchant} = "${a.displayName}": ${a.explanation}`)
-    .join('\n')
+  const aliasContext = aliases.filter((a) => a.explanation)
+    .map((a) => `${a.merchant} = "${a.displayName}": ${a.explanation}`).join('\n')
 
   const profileContext = profile
-    ? `\nAnvändarprofil:\n- Namn: ${profile.name ?? 'okänt'}\n- Ålder: ${profile.age ?? 'okänt'}\n- Yrke: ${profile.occupation ?? 'okänt'}\n- Ekonomiskt mål: ${profile.financialGoal ?? 'ej angivet'}\n- Sparmål per månad: ${profile.savingsTarget ? profile.savingsTarget + ' kr' : 'ej angivet'}`
+    ? `\nProfil: ${profile.name ?? ''}, ${profile.age ?? '?'} år, ${profile.occupation ?? '?'}. Mål: ${profile.financialGoal ?? '?'}. Sparmål: ${profile.savingsTarget ? profile.savingsTarget + ' kr/mån' : '?'}.`
     : ''
 
-  const merchantContext = aliasContext
-    ? `\nFörklarade handlare:\n${aliasContext}`
-    : ''
+  const prompt = `Du är Pulse — en personlig AI-ekonomiassistent. Det är ${weekday}.
 
-  const prompt = `Du är Pulse — en personlig AI-ekonomiassistent.
+Velocity: ${velocity.level}
+Saldo: ${Math.round(velocity.currentBalance).toLocaleString('sv-SE')} kr | Dagar till lön: ${velocity.daysUntilPayday} | Budget/dag: ${Math.round(velocity.dailyBudgetRemaining).toLocaleString('sv-SE')} kr
+Topp-kategorier: ${topCategories}
+Avvikelser: ${anomalies.length > 0 ? anomalies.join(', ') : 'inga'}${profileContext}${notesContext}${aliasContext ? `\nHandlare: ${aliasContext}` : ''}
 
-Transaktionsdata:
-- Spending velocity: ${velocity.level}
-- Topp-kategorier denna månad: ${topCategories}
-- Avvikelser: ${anomalies.length > 0 ? anomalies.join(', ') : 'inga'}
-- Dag i veckan: ${weekday}${notesContext}${profileContext}${merchantContext}
-
-Ge ETT konkret råd baserat på denna data. Max 3 meningar. Alltid SEK-belopp, aldrig generiska tips. Svenska. Smart kompis-ton.`
+Ge ETT konkret råd. Max 2 meningar. Alltid SEK-belopp, aldrig generiska tips. Svenska. Smart kompis-ton.`
 
   const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 256,
+    model: 'claude-3-5-haiku-20241022',
+    max_tokens: 150,
     messages: [{ role: 'user', content: prompt }],
   })
 
-  const text = response.content[0].type === 'text' ? response.content[0].text : ''
-  return text.trim()
+  return response.content[0].type === 'text' ? response.content[0].text.trim() : ''
 }
 
 export async function generatePushDecisions(
@@ -176,101 +152,195 @@ export async function generatePushDecisions(
   subscriptions: Subscription[],
   alreadySentToday: number,
   maxPerDay = 3,
-  anomalies: Anomaly[] = []
+  anomalies: Anomaly[] = [],
+  userId = 'local'
 ): Promise<PushDecision[]> {
   const remaining = maxPerDay - alreadySentToday
   if (remaining <= 0) return []
 
   const today = new Date()
-  const jsDay = today.getDay()
-  const weekday = WEEKDAY_NAMES[jsDay === 0 ? 6 : jsDay - 1]
+  const weekday = WEEKDAY_NAMES[today.getDay()]
   const hour = today.getHours()
 
-  const profile = await prisma.userProfile.findFirst()
-  const aliases = await prisma.merchantAlias.findMany({ where: { explanation: { not: null } } })
+  // Time of day context
+  const timeOfDay = hour < 10 ? 'morgon' : hour < 13 ? 'förmiddag' : hour < 17 ? 'eftermiddag' : hour < 20 ? 'kväll' : 'sen kväll'
 
-  // Last 7 days of transactions for context
-  const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-  const recentTx = await prisma.transaction.findMany({
-    where: { date: { gte: since7d }, isIncome: false },
-    orderBy: { date: 'desc' },
-    take: 50,
-    select: { date: true, merchant: true, amount: true, category: true },
-  })
+  const [profile, aliases, recentTx, lastInsights, weekAgoPeriod, monthTx] = await Promise.all([
+    prisma.userProfile.findFirst({ where: { userId } }),
+    prisma.merchantAlias.findMany({ where: { userId, explanation: { not: null } } }),
+    prisma.transaction.findMany({
+      where: { userId, date: { gte: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000) }, isIncome: false },
+      orderBy: { date: 'desc' },
+      take: 40,
+      select: { date: true, merchant: true, amount: true, category: true },
+    }),
+    prisma.insight.findMany({
+      where: { userId, type: { in: ['velocity', 'insight', 'subscription', 'anomaly', 'positive'] } },
+      orderBy: { sentAt: 'desc' },
+      take: 5,
+      select: { type: true, message: true, sentAt: true },
+    }),
+    prisma.transaction.aggregate({
+      where: {
+        userId,
+        date: { gte: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000), lt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+        isIncome: false,
+      },
+      _sum: { amount: true },
+    }),
+    // This month's transactions for merchant breakdown per category
+    prisma.transaction.findMany({
+      where: { userId, date: { gte: new Date(today.getFullYear(), today.getMonth(), 1) }, isIncome: false },
+      select: { merchant: true, amount: true, category: true },
+    }),
+  ])
 
-  const txLines = recentTx
-    .map((t) => {
-      const d = t.date.toISOString().slice(0, 10)
-      return `${d} ${t.merchant} -${Math.abs(t.amount).toLocaleString('sv-SE')} kr (${t.category ?? 'övrigt'})`
+  // This week's spending
+  const thisWeekTx = recentTx.filter(t => new Date(t.date) >= new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))
+  const thisWeekTotal = Math.abs(thisWeekTx.reduce((s, t) => s + t.amount, 0))
+  const lastWeekTotal = Math.abs(weekAgoPeriod._sum.amount ?? 0)
+
+  // Merchant frequency this week
+  const merchantCount: Record<string, number> = {}
+  for (const t of thisWeekTx) {
+    merchantCount[t.merchant] = (merchantCount[t.merchant] ?? 0) + 1
+  }
+  const frequentMerchants = Object.entries(merchantCount)
+    .filter(([, count]) => count >= 2)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([m, count]) => `${m} (${count}x)`)
+
+  // Merchant breakdown per category this month
+  const catMerchants: Record<string, { merchant: string; total: number }[]> = {}
+  for (const t of monthTx) {
+    const cat = t.category ?? 'övrigt'
+    if (!catMerchants[cat]) catMerchants[cat] = []
+    const existing = catMerchants[cat].find(m => m.merchant === t.merchant)
+    if (existing) existing.total += Math.abs(t.amount)
+    else catMerchants[cat].push({ merchant: t.merchant, total: Math.abs(t.amount) })
+  }
+
+  const txLines = recentTx.slice(0, 20)
+    .map(t => {
+      const d = new Date(t.date).toLocaleDateString('sv-SE', { weekday: 'short', month: 'numeric', day: 'numeric' })
+      return `${d}: ${t.merchant} -${Math.abs(t.amount).toLocaleString('sv-SE')} kr (${t.category ?? 'övrigt'})`
     })
     .join('\n')
 
   const subLines = subscriptions.length > 0
-    ? subscriptions.map((s) => `${s.merchant} ${s.amount} kr/mån, senast ${s.lastCharged instanceof Date ? s.lastCharged.toISOString().slice(0, 10) : String(s.lastCharged).slice(0, 10)}, ${s.monthsDetected} månader`).join('\n')
+    ? subscriptions.slice(0, 5).map(s => {
+        const last = new Date(s.lastCharged as unknown as string)
+        const nextDate = new Date(last.getTime() + 30 * 24 * 60 * 60 * 1000)
+        const daysUntil = Math.round((nextDate.getTime() - Date.now()) / 86400000)
+        return `${s.merchant} ${s.amount} kr/mån${daysUntil <= 7 ? ` (drar om ${daysUntil} dagar!)` : ''}`
+      }).join('\n')
     : 'inga'
 
-  const aliasLines = aliases.map((a) => `${a.merchant} = "${a.displayName}": ${a.explanation}`).join('\n')
-  const profileLine = profile
-    ? `${profile.name ?? ''}, ${profile.age ?? '?'} år, ${profile.occupation ?? '?'}. Mål: ${profile.financialGoal ?? '?'}. Sparmål: ${profile.savingsTarget ? profile.savingsTarget + ' kr/mån' : '?'}.`
-    : 'Ingen profil satt'
+  const lastInsightLines = lastInsights.length > 0
+    ? lastInsights.map(i => {
+        const ago = Math.round((Date.now() - new Date(i.sentAt).getTime()) / 3600000)
+        return `[${ago}h sedan] ${i.message}`
+      }).join('\n')
+    : 'inga skickade ännu idag'
 
-  const topCats = categories.slice(0, 5).map((c) => `${c.category} ${Math.round(c.amount).toLocaleString('sv-SE')} kr`).join(', ')
-  const anomalyLines = anomalies.length > 0
-    ? anomalies.map((a) => `[AVVIKELSE] ${a.context}`).join('\n')
+  const profileLine = profile
+    ? `${profile.name ?? 'Användaren'}, ${profile.age ?? '?'} år, ${profile.occupation ?? '?'}. Mål: ${profile.financialGoal ?? '?'}. Sparmål: ${profile.savingsTarget ? profile.savingsTarget + ' kr/mån' : 'ej satt'}.`
+    : 'Ingen profil'
+
+  // Savings tracking
+  const savingsLine = profile?.savingsTarget && velocity.currentBalance > 0
+    ? `Sparmål: ${profile.savingsTarget.toLocaleString('sv-SE')} kr/mån. Nuvarande nettosparande denna månad: ${Math.round(velocity.currentBalance - (profile.criticalBuffer ?? 5000)).toLocaleString('sv-SE')} kr.`
     : ''
 
-  const prompt = `Du är Pulse — en personlig AI-ekonomiassistent. Det är ${weekday} kl ${hour}:00.
+  const weekComparison = lastWeekTotal > 0
+    ? thisWeekTotal > lastWeekTotal * 1.2
+      ? `Denna vecka: ${Math.round(thisWeekTotal).toLocaleString('sv-SE')} kr (${Math.round((thisWeekTotal / lastWeekTotal - 1) * 100)}% mer än förra veckan)`
+      : thisWeekTotal < lastWeekTotal * 0.8
+        ? `Denna vecka: ${Math.round(thisWeekTotal).toLocaleString('sv-SE')} kr (${Math.round((1 - thisWeekTotal / lastWeekTotal) * 100)}% mindre än förra veckan — bra!)`
+        : `Denna vecka: ${Math.round(thisWeekTotal).toLocaleString('sv-SE')} kr (liknande förra veckan)`
+    : `Denna vecka: ${Math.round(thisWeekTotal).toLocaleString('sv-SE')} kr`
 
-Användarprofil: ${profileLine}
+  // Category lines with merchant breakdown and over/under baseline flags
+  const categoryLines = categories.slice(0, 7).map(c => {
+    const merchants = (catMerchants[c.category] ?? [])
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 3)
+      .map(m => `${m.merchant} ${Math.round(m.total).toLocaleString('sv-SE')} kr`)
+    const flag = c.baseline > 0
+      ? c.amount > c.baseline * 1.5 ? ' ⚠ ÖVER snitt'
+      : c.amount < c.baseline * 0.5 ? ' ✓ UNDER snitt'
+      : ''
+      : ''
+    return `${c.category}: ${Math.round(c.amount).toLocaleString('sv-SE')} kr (snitt ${Math.round(c.baseline).toLocaleString('sv-SE')} kr)${flag}${merchants.length > 0 ? ` — ${merchants.join(', ')}` : ''}`
+  }).join('\n')
 
-Spending velocity: ${velocity.level}
-Projicerat denna månad: ${Math.round(velocity.projectedMonthTotal).toLocaleString('sv-SE')} kr (snitt ${Math.round(velocity.baselineMonthly).toLocaleString('sv-SE')} kr)
-Saldo: ${Math.round(velocity.currentBalance).toLocaleString('sv-SE')} kr
-Dagar till lön: ${velocity.daysUntilPayday}
-Dagbudget kvar: ${Math.round(velocity.dailyBudgetRemaining).toLocaleString('sv-SE')} kr/dag
+  const prompt = `Du är Pulse — en personlig AI-ekonomiassistent som känner användaren väl. Det är ${weekday} ${timeOfDay} (kl ${hour}:00).
 
-Kategorier denna månad: ${topCats}
+ANVÄNDARE: ${profileLine}
+${savingsLine ? savingsLine : ''}
 
-Prenumerationer: ${subLines}
+EKONOMISK STATUS:
+- Velocity: ${velocity.level}
+- Saldo: ${Math.round(velocity.currentBalance).toLocaleString('sv-SE')} kr
+- Dagar till lön (den ${velocity.daysUntilPayday > 0 ? new Date(Date.now() + velocity.daysUntilPayday * 86400000).getDate() + ':e' : 'snart'}): ${velocity.daysUntilPayday} dagar
+- Budget kvar/dag: ${Math.round(velocity.dailyBudgetRemaining).toLocaleString('sv-SE')} kr
+- Projicerat denna månad: ${Math.round(velocity.projectedMonthTotal).toLocaleString('sv-SE')} kr (snitt: ${Math.round(velocity.baselineMonthly).toLocaleString('sv-SE')} kr)
+- ${weekComparison}
+${frequentMerchants.length > 0 ? `- Återkommande handlare denna vecka: ${frequentMerchants.join(', ')}` : ''}
 
-Senaste 7 dagars transaktioner:
+KATEGORIER DENNA MÅNAD (med merchant-breakdown):
+${categoryLines}
+
+PRENUMERATIONER:
+${subLines}
+
+${anomalies.length > 0 ? `AVVIKELSER:\n${anomalies.map(a => `⚠ ${a.context}`).join('\n')}\n` : ''}
+SENASTE TRANSAKTIONER (14 dagar):
 ${txLines || 'inga'}
 
-${aliasLines ? `Förklarade handlare:\n${aliasLines}` : ''}
-${anomalyLines ? `\nAvvikelser upptäckta:\n${anomalyLines}` : ''}
+${aliases.length > 0 ? `KÄNDA HANDLARE:\n${aliases.map(a => `${a.merchant} = ${a.displayName}: ${a.explanation}`).join('\n')}\n` : ''}
+NOTISER REDAN SKICKADE (undvik att upprepa):
+${lastInsightLines}
 
-Du får skicka MAX ${remaining} push-notis(er) just nu (${alreadySentToday} av ${maxPerDay} skickade idag).
+---
 
-Bestäm om du ska skicka en push-notis och vad den ska säga. Skicka bara om det är genuint relevant just nu — inte bara för att du kan.
+Du får skicka MAX ${remaining} notis(er) nu (${alreadySentToday}/${maxPerDay} skickade idag).
 
-Prioritet (högst till lägst):
-1. Avvikelse/okänd transaktion på stor summa — "Okej, vad hände på [dag]? [belopp] kr på [ställe] du aldrig varit på."
-2. CRITICAL velocity — "Om du fortsätter i den här takten har du [X] kr kvar när hyran drar."
-3. WARNING velocity — "Du är på väg mot [X] kr den här månaden. Bromsa lite den här veckan."
-4. Fredagskväll — påminn om helgen om du spenderat mer än normalt den här veckan
-5. Måndag morgon — motiverande med dagbudget om tight
-6. Bra vecka att hylla — om spending klart under snitt
+Din uppgift: Bestäm om det finns något genuint värt att säga just nu — och vad.
 
-Svara ENBART med giltig JSON (ingen markdown, ingen förklarande text runt om):
-[
-  { "send": true/false, "title": "kort titel max 40 tecken", "body": "en mening max 100 tecken, smart kompis-ton, SEK-belopp" }
-]
+Tänk som en smart vän som följer ekonomin noga: ibland är det bästa att INTE skicka något. Skicka bara om du har något specifikt och relevant att säga baserat på datan ovan.
 
-Svara på svenska. Returnera exakt 1 objekt i arrayen.`
+Bra notiser:
+- Refererar till specifika köp, belopp eller handlare från datan
+- Är tidsenliga (morgon = planering, kväll = reflektion)
+- Känns personliga, inte generiska
+- Är korta och slagkraftiga (max 120 tecken i body)
+- Varierar — kolla senaste notiserna och undvik samma tema
+
+Dåliga notiser:
+- "Kom ihåg att hålla koll på din budget" (generiskt)
+- Upprepar något som redan skickades nyligen
+- Skickas bara för att kvoten tillåter det
+
+Svara ENBART med giltig JSON — ingen markdown, ingen text runt om:
+[{ "send": true, "title": "max 35 tecken", "body": "max 120 tecken, personlig ton, SEK-belopp, svenska" }]
+
+Om inget är värt att skicka: [{ "send": false, "title": "", "body": "" }]`
 
   const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 300,
+    model: 'claude-3-5-haiku-20241022',
+    max_tokens: 200,
     messages: [{ role: 'user', content: prompt }],
   })
 
   const raw = response.content[0].type === 'text' ? response.content[0].text : '[]'
-  const match = raw.match(/\[[\s\S]*\]/)
+  const match = raw.match(/\[[\s\S]*?\]/)
   if (!match) return []
 
   try {
     const decisions = JSON.parse(match[0]) as PushDecision[]
-    return decisions.filter((d) => d.send)
+    return decisions.filter(d => d.send && d.body.length > 0)
   } catch {
     return []
   }

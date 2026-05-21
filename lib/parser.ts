@@ -7,8 +7,8 @@ export interface ParsedTransaction {
   isIncome: boolean
 }
 
-// Parse a CSV line respecting quoted fields
-function parseCsvLine(line: string): string[] {
+// Parse a CSV line respecting quoted fields, auto-detects , or ; delimiter
+function parseCsvLine(line: string, delimiter = ','): string[] {
   const fields: string[] = []
   let current = ''
   let inQuotes = false
@@ -17,7 +17,7 @@ function parseCsvLine(line: string): string[] {
     const ch = line[i]
     if (ch === '"') {
       inQuotes = !inQuotes
-    } else if (ch === ',' && !inQuotes) {
+    } else if (ch === delimiter && !inQuotes) {
       fields.push(current.trim())
       current = ''
     } else {
@@ -26,6 +26,12 @@ function parseCsvLine(line: string): string[] {
   }
   fields.push(current.trim())
   return fields
+}
+
+function detectDelimiter(line: string): ',' | ';' {
+  const semicolons = (line.match(/;/g) ?? []).length
+  const commas = (line.match(/,/g) ?? []).length
+  return semicolons >= commas ? ';' : ','
 }
 
 // Swedbank exports amounts with period decimal (e.g. -280.00) or Swedish comma (e.g. -280,00)
@@ -40,7 +46,7 @@ export function parseSwedbank(csvText: string): ParsedTransaction[] {
 
   // Find the header row (contains "Bokföringsdag" or "Datum")
   let headerIndex = -1
-  for (let i = 0; i < Math.min(lines.length, 5); i++) {
+  for (let i = 0; i < Math.min(lines.length, 10); i++) {
     const l = lines[i].toLowerCase()
     if (l.includes('bokf') || l.includes('datum') || l.includes('radnummer')) {
       headerIndex = i
@@ -50,16 +56,12 @@ export function parseSwedbank(csvText: string): ParsedTransaction[] {
 
   if (headerIndex === -1) return results
 
-  const headers = parseCsvLine(lines[headerIndex]).map((h) => h.toLowerCase())
+  const delimiter = detectDelimiter(lines[headerIndex])
+  const headers = parseCsvLine(lines[headerIndex], delimiter).map((h) => h.toLowerCase().replace(/["\s]/g, ''))
 
-  // Detect column indices
-  const dateCol =
-    headers.findIndex((h) => h.includes('bokföringsdag') || h.includes('bokföringsdag') || h === 'datum')
-    ?? headers.findIndex((h) => h.includes('bokf'))
-  const descCol =
-    headers.findIndex((h) => h === 'beskrivning') !== -1
-      ? headers.findIndex((h) => h === 'beskrivning')
-      : headers.findIndex((h) => h === 'transaktion')
+  // Detect column indices — normalize header names
+  const dateCol = headers.findIndex((h) => h.includes('bokf') || h === 'datum')
+  const descCol = headers.findIndex((h) => h === 'beskrivning' || h === 'transaktion' || h.includes('text'))
   const amountCol = headers.findIndex((h) => h === 'belopp')
   const balanceCol = headers.findIndex((h) => h.includes('saldo'))
 
@@ -69,13 +71,13 @@ export function parseSwedbank(csvText: string): ParsedTransaction[] {
     const line = lines[i].trim()
     if (!line) continue
 
-    const parts = parseCsvLine(line)
+    const parts = parseCsvLine(line, delimiter)
     if (parts.length <= Math.max(dateCol, descCol, amountCol, balanceCol)) continue
 
-    const dateStr = parts[dateCol]
-    const merchant = parts[descCol]
-    const amountStr = parts[amountCol]
-    const balanceStr = parts[balanceCol]
+    const dateStr = parts[dateCol]?.replace(/"/g, '').trim()
+    const merchant = parts[descCol]?.replace(/"/g, '').trim()
+    const amountStr = parts[amountCol]?.replace(/"/g, '').trim()
+    const balanceStr = parts[balanceCol]?.replace(/"/g, '').trim()
 
     const date = new Date(dateStr)
     if (isNaN(date.getTime())) continue

@@ -6,8 +6,17 @@ datasource db {
   provider = "sqlite"
 }
 
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String?
+  createdAt DateTime @default(now())
+}
+
 model Transaction {
   id        String   @id
+  userId    String   @default("local")
   date      DateTime
   merchant  String
   amount    Float
@@ -20,15 +29,19 @@ model Transaction {
 
 model Baseline {
   id         String   @id @default(cuid())
-  category   String   @unique
+  userId     String   @default("local")
+  category   String
   weeklyAvg  Float
   monthlyAvg Float
   byWeekday  String
   updatedAt  DateTime @updatedAt
+
+  @@unique([userId, category])
 }
 
 model Insight {
   id      String   @id @default(cuid())
+  userId  String   @default("local")
   type    String
   message String
   data    String?
@@ -38,41 +51,72 @@ model Insight {
 
 model SeasonalMemory {
   id         String  @id @default(cuid())
+  userId     String  @default("local")
   year       Int
   month      String
   total      Float
   byCategory String
   note       String?
 
-  @@unique([year, month])
+  @@unique([userId, year, month])
 }
 
 model PushSubscription {
   id        String   @id @default(cuid())
+  userId    String   @default("local")
   endpoint  String   @unique
   keys      String
   createdAt DateTime @default(now())
 }
 
 model UserProfile {
-  id               String   @id @default(cuid())
+  id               String    @id @default(cuid())
+  userId           String    @unique @default("local")
   name             String?
   age              Int?
   occupation       String?
   financialGoal    String?
   savingsTarget    Float?
-  paydayDay        Int      @default(25)
-  monthlyRent      Float    @default(8500)
-  criticalBuffer   Float    @default(5000)
-  warningThreshold Float    @default(1.25)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  paydayDay        Int       @default(25)
+  monthlyRent      Float     @default(8500)
+  criticalBuffer   Float     @default(5000)
+  warningThreshold Float     @default(1.25)
+  isPremium        Boolean   @default(false)
+  premiumUntil     DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 }
 
 model MerchantAlias {
   id          String   @id @default(cuid())
-  merchant    String   @unique
+  userId      String   @default("local")
+  merchant    String
   displayName String
   explanation String?
   updatedAt   DateTime @updatedAt
+
+  @@unique([userId, merchant])
+}
+
+model BankConnection {
+  id              String    @id @default(cuid())
+  userId          String    @default("local")
+  requisitionId   String    @unique
+  accountIds      String    @default("")
+  institutionId   String    @default("tink")
+  keys            String    @default("")
+  status          String    @default("pending")
+  lastSyncedAt    DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+model Budget {
+  id       String @id @default(cuid())
+  userId   String @default("local")
+  category String
+  amount   Float
+  period   String @default("monthly")
+
+  @@unique([userId, category])
 }

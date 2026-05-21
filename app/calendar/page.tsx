@@ -31,9 +31,9 @@ function EventPill({ type, label, amount }: { type: string; label: string; amoun
     </div>
   )
   return (
-    <div className="flex items-center gap-1 bg-purple-500/15 text-purple-400 text-[9px] font-semibold px-1.5 py-0.5 rounded-full truncate">
+    <div title={label} className="flex items-center gap-1 bg-purple-500/15 text-purple-400 text-[9px] font-semibold px-1.5 py-0.5 rounded-full truncate">
       <CreditCard className="w-2.5 h-2.5 shrink-0" />
-      <span className="truncate">{label.slice(0, 8)}</span>
+      <span className="truncate">{label.slice(0, 9)}</span>
     </div>
   )
 }
@@ -41,12 +41,13 @@ function EventPill({ type, label, amount }: { type: string; label: string; amoun
 export default function CalendarPage() {
   const [data, setData] = useState<CalendarResponse | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
 
   useEffect(() => {
     fetch('/api/calendar')
-      .then(r => r.json())
+      .then(r => { if (!r.ok) throw new Error('Failed'); return r.json() })
       .then(d => { setData(d as CalendarResponse); setLoading(false) })
-      .catch(() => setLoading(false))
+      .catch(() => { setError(true); setLoading(false) })
   }, [])
 
   const today = new Date()
@@ -57,7 +58,7 @@ export default function CalendarPage() {
 
   return (
     <div className="min-h-screen bg-[#080808]">
-      <header className="bg-[#080808]/80 backdrop-blur-xl border-b border-white/[0.06] px-4 py-3 flex items-center gap-3 sticky top-0 z-50">
+      <header className="bg-[#080808]/80 backdrop-blur-xl border-b border-white/[0.06] px-4 py-3 flex items-center gap-3 sticky top-0 sm:top-12 z-30">
         <Link href="/" className="text-zinc-500 hover:text-zinc-300 transition-colors">
           <ArrowLeft className="w-4 h-4" />
         </Link>
@@ -72,7 +73,7 @@ export default function CalendarPage() {
           <div className="bg-red-950/40 border border-red-500/20 rounded-2xl p-4 flex items-start gap-3">
             <AlertTriangle className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
             <div>
-              <p className="text-sm font-semibold text-red-300">Saldobörsen kan bli tight</p>
+              <p className="text-sm font-semibold text-red-300">Saldot kan bli tight</p>
               <p className="text-xs text-red-400/70 mt-0.5">
                 Saldot beräknas gå under 5 000 kr den{' '}
                 {new Date(firstCritical.date).toLocaleDateString('sv-SE', { day: 'numeric', month: 'long' })}.
@@ -94,6 +95,10 @@ export default function CalendarPage() {
             {Array.from({ length: 30 }).map((_, i) => (
               <div key={i} className="aspect-square bg-[#0f0f0f] border border-white/[0.06] rounded-xl animate-pulse" />
             ))}
+          </div>
+        ) : error ? (
+          <div className="bg-red-950/30 border border-red-500/20 rounded-2xl p-6 text-sm text-red-400 text-center">
+            Kunde inte ladda kalenderdata — kontrollera anslutningen.
           </div>
         ) : !data ? null : (
           <>
@@ -183,9 +188,15 @@ export default function CalendarPage() {
               </div>
               <div>
                 <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-1">Saldo om 30 dagar</p>
-                <p className={`text-sm font-bold ${(data.days[29]?.projectedBalance ?? 0) < 5000 ? 'text-red-400' : 'text-emerald-400'}`}>
-                  {fmt(data.days[29]?.projectedBalance ?? 0)} kr
-                </p>
+                {(() => {
+                  const lastDay = data.days[data.days.length - 1]
+                  const balance = lastDay?.projectedBalance ?? 0
+                  return (
+                    <p className={`text-sm font-bold ${balance < 5000 ? 'text-red-400' : 'text-emerald-400'}`}>
+                      {fmt(balance)} kr
+                    </p>
+                  )
+                })()}
               </div>
             </div>
           </>

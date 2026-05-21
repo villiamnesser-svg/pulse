@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getUserId } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 
 export async function PATCH(
@@ -6,8 +7,12 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const userId = await getUserId(req)
     const { id } = await params
     const body = (await req.json()) as { note?: string; category?: string }
+
+    const tx = await prisma.transaction.findFirst({ where: { id, userId } })
+    if (!tx) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     const updated = await prisma.transaction.update({
       where: { id },
@@ -15,17 +20,7 @@ export async function PATCH(
         ...(body.note !== undefined && { note: body.note }),
         ...(body.category !== undefined && { category: body.category }),
       },
-      select: {
-        id: true,
-        date: true,
-        merchant: true,
-        amount: true,
-        balance: true,
-        category: true,
-        isIncome: true,
-        note: true,
-        createdAt: true,
-      },
+      select: { id: true, date: true, merchant: true, amount: true, balance: true, category: true, isIncome: true, note: true, createdAt: true },
     })
 
     return NextResponse.json(updated)

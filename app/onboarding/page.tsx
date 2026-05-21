@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { Activity, Loader2 } from 'lucide-react'
+import { useState, useEffect, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { Activity, Loader2, Building2, Check, Zap, TrendingUp, Bell, ChevronRight, ArrowRight } from 'lucide-react'
 
 interface ProfileData {
   name: string
@@ -14,7 +14,8 @@ interface ProfileData {
   monthlyRent: string
 }
 
-const TOTAL_STEPS = 4
+const TOTAL_STEPS = 6
+const LS_KEY = 'pulse_onboarding_draft'
 
 const inputClass =
   'bg-[#161616] border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20 transition-all w-full'
@@ -22,15 +23,20 @@ const inputClass =
 const labelClass = 'text-xs font-medium text-zinc-500 uppercase tracking-wide mb-1.5 block'
 
 const primaryBtn =
-  'bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-3 px-6 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex-1 flex items-center justify-center gap-2'
+  'bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-3 px-6 rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed flex-1 flex items-center justify-center gap-2 active:scale-[0.98]'
 
 const backBtn =
   'text-zinc-600 hover:text-zinc-400 text-sm transition-colors px-4 py-3 rounded-xl'
 
-export default function OnboardingPage() {
+function OnboardingContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const bankParam = searchParams.get('bank')
+
   const [step, setStep] = useState(1)
   const [saving, setSaving] = useState(false)
+  const [bankLoading, setBankLoading] = useState(false)
+  const [bankConnected, setBankConnected] = useState(false)
   const [direction, setDirection] = useState<'forward' | 'back'>('forward')
   const [animating, setAnimating] = useState(false)
 
@@ -44,8 +50,24 @@ export default function OnboardingPage() {
     monthlyRent: '8500',
   })
 
+  // Restore draft from localStorage and handle bank callback
+  useEffect(() => {
+    const draft = localStorage.getItem(LS_KEY)
+    if (draft) {
+      try { setData(JSON.parse(draft) as ProfileData) } catch { /* ignore */ }
+    }
+    if (bankParam === 'connected') {
+      setBankConnected(true)
+      goToStep(6, 'forward')
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   function update(field: keyof ProfileData, value: string) {
-    setData((prev) => ({ ...prev, [field]: value }))
+    setData((prev) => {
+      const next = { ...prev, [field]: value }
+      localStorage.setItem(LS_KEY, JSON.stringify(next))
+      return next
+    })
   }
 
   function goToStep(next: number, dir: 'forward' | 'back') {
@@ -55,18 +77,26 @@ export default function OnboardingPage() {
     setTimeout(() => {
       setStep(next)
       setAnimating(false)
-    }, 220)
+    }, 200)
   }
 
-  function next() {
-    if (step < TOTAL_STEPS) goToStep(step + 1, 'forward')
+  function next() { if (step < TOTAL_STEPS) goToStep(step + 1, 'forward') }
+  function back() { if (step > 1) goToStep(step - 1, 'back') }
+
+  async function connectBank() {
+    setBankLoading(true)
+    localStorage.setItem(LS_KEY, JSON.stringify(data))
+    try {
+      const res = await fetch('/api/bank/connect?source=onboarding')
+      const json = await res.json() as { url?: string; error?: string }
+      if (!res.ok || !json.url) { setBankLoading(false); return }
+      window.location.href = json.url
+    } catch {
+      setBankLoading(false)
+    }
   }
 
-  function back() {
-    if (step > 1) goToStep(step - 1, 'back')
-  }
-
-  async function submit() {
+  async function finish() {
     setSaving(true)
     try {
       const payload = {
@@ -84,6 +114,13 @@ export default function OnboardingPage() {
         body: JSON.stringify(payload),
       })
       document.cookie = 'pulse_profile_done=1; path=/; max-age=31536000'
+      localStorage.removeItem(LS_KEY)
+
+      // Trigger bank sync in background if bank was connected
+      if (bankConnected) {
+        fetch('/api/bank/sync', { method: 'POST' }).catch(() => null)
+      }
+
       router.push('/')
     } catch (err) {
       console.error('Failed to save profile:', err)
@@ -93,8 +130,8 @@ export default function OnboardingPage() {
 
   const slideClass = animating
     ? direction === 'forward'
-      ? 'opacity-0 translate-x-8'
-      : 'opacity-0 -translate-x-8'
+      ? 'opacity-0 translate-x-6'
+      : 'opacity-0 -translate-x-6'
     : 'opacity-100 translate-x-0'
 
   const progressPct = ((step - 1) / (TOTAL_STEPS - 1)) * 100
@@ -102,7 +139,6 @@ export default function OnboardingPage() {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-4 py-12 bg-[#080808]">
       <div className="w-full max-w-md">
-        {/* Card */}
         <div className="bg-[#0f0f0f] border border-white/[0.08] rounded-3xl p-8">
           {/* Logo */}
           <div className="flex items-center gap-2 mb-6">
@@ -110,7 +146,7 @@ export default function OnboardingPage() {
             <span className="text-lg font-black tracking-widest text-white uppercase">PULSE</span>
           </div>
 
-          {/* Progress bar */}
+          {/* Progress */}
           <div className="mb-1">
             <div className="h-0.5 bg-[#161616] rounded-full overflow-hidden">
               <div
@@ -119,8 +155,6 @@ export default function OnboardingPage() {
               />
             </div>
           </div>
-
-          {/* Step indicator */}
           <div className="flex justify-end mb-6">
             <span className="text-xs text-zinc-600">{step} / {TOTAL_STEPS}</span>
           </div>
@@ -171,27 +205,53 @@ export default function OnboardingPage() {
                 monthlyRent={data.monthlyRent}
                 onPaydayChange={(v) => update('paydayDay', v)}
                 onRentChange={(v) => update('monthlyRent', v)}
-                onSubmit={() => void submit()}
+                onNext={next}
                 onBack={back}
-                saving={saving}
                 inputClass={inputClass}
                 labelClass={labelClass}
                 primaryBtn={primaryBtn}
                 backBtn={backBtn}
               />
             )}
+            {step === 5 && (
+              <Step5
+                onConnect={connectBank}
+                onSkip={next}
+                onBack={back}
+                loading={bankLoading}
+                primaryBtn={primaryBtn}
+                backBtn={backBtn}
+              />
+            )}
+            {step === 6 && (
+              <Step6
+                bankConnected={bankConnected}
+                name={data.name}
+                onFinish={() => void finish()}
+                saving={saving}
+                primaryBtn={primaryBtn}
+              />
+            )}
           </div>
         </div>
 
         <p className="mt-6 text-xs text-zinc-700 text-center">
-          All data lagras lokalt på din enhet
+          All data lagras säkert och delas aldrig med tredje part
         </p>
       </div>
     </div>
   )
 }
 
-/* ── Step 1 ── */
+export default function OnboardingPage() {
+  return (
+    <Suspense>
+      <OnboardingContent />
+    </Suspense>
+  )
+}
+
+/* ── Step 1: Welcome ── */
 function Step1({
   name,
   onNameChange,
@@ -210,9 +270,12 @@ function Step1({
   return (
     <div className="space-y-6">
       <div>
+        <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mb-4">
+          <Activity className="w-6 h-6 text-emerald-400" />
+        </div>
         <h2 className="text-2xl font-bold text-zinc-100 mb-2">Hej! Jag är Pulse.</h2>
         <p className="text-sm text-zinc-500 leading-relaxed">
-          Din personliga ekonomiassistent. Låt mig lära känna dig lite — det tar bara 2 minuter.
+          Din personliga ekonomiassistent. Jag hjälper dig hålla koll på pengarna, spotta mönster och fatta bättre beslut — automatiskt.
         </p>
       </div>
       <div>
@@ -227,18 +290,14 @@ function Step1({
           className={inputClass}
         />
       </div>
-      <button
-        onClick={onNext}
-        disabled={!name.trim()}
-        className={primaryBtn}
-      >
-        Kom igång
+      <button onClick={onNext} disabled={!name.trim()} className={primaryBtn}>
+        Kom igång <ArrowRight className="w-4 h-4" />
       </button>
     </div>
   )
 }
 
-/* ── Step 2 ── */
+/* ── Step 2: About you ── */
 function Step2({
   age,
   occupation,
@@ -267,7 +326,7 @@ function Step2({
       <div>
         <h2 className="text-2xl font-bold text-zinc-100 mb-2">Lite om dig</h2>
         <p className="text-sm text-zinc-500">
-          Hjälper mig ge mer relevanta råd.
+          Hjälper mig ge mer relevanta råd utifrån din situation.
         </p>
       </div>
       <div className="space-y-4">
@@ -297,18 +356,16 @@ function Step2({
         </div>
       </div>
       <div className="flex gap-3">
-        <button onClick={onBack} className={backBtn}>
-          Tillbaka
-        </button>
+        <button onClick={onBack} className={backBtn}>Tillbaka</button>
         <button onClick={onNext} className={primaryBtn}>
-          Nästa
+          Nästa <ChevronRight className="w-4 h-4" />
         </button>
       </div>
     </div>
   )
 }
 
-/* ── Step 3 ── */
+/* ── Step 3: Goals ── */
 function Step3({
   financialGoal,
   savingsTarget,
@@ -335,25 +392,28 @@ function Step3({
   return (
     <div className="space-y-6">
       <div>
+        <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mb-4">
+          <TrendingUp className="w-6 h-6 text-emerald-400" />
+        </div>
         <h2 className="text-2xl font-bold text-zinc-100 mb-2">Vad vill du uppnå?</h2>
         <p className="text-sm text-zinc-500">
-          Dina mål hjälper mig prioritera råden rätt.
+          Dina mål hjälper mig prioritera råden och hålla dig motiverad.
         </p>
       </div>
       <div className="space-y-4">
         <div>
-          <label className={labelClass}>Beskriv ditt ekonomiska mål</label>
+          <label className={labelClass}>Ditt ekonomiska mål</label>
           <textarea
             autoFocus
             value={financialGoal}
             onChange={(e) => onGoalChange(e.target.value)}
             rows={3}
-            placeholder="t.ex. spara till lägenhet, bli skuldfri, bygga en buffert på 50 000 kr"
+            placeholder="t.ex. spara till lägenhet, bli skuldfri, bygga en buffert"
             className={`${inputClass} resize-none`}
           />
         </div>
         <div>
-          <label className={labelClass}>Hur mycket vill du spara per månad?</label>
+          <label className={labelClass}>Sparmål per månad</label>
           <div className="relative">
             <input
               type="number"
@@ -363,33 +423,28 @@ function Step3({
               min={0}
               className={`${inputClass} pr-10`}
             />
-            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 text-sm pointer-events-none">
-              kr
-            </span>
+            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 text-sm pointer-events-none">kr</span>
           </div>
         </div>
       </div>
       <div className="flex gap-3">
-        <button onClick={onBack} className={backBtn}>
-          Tillbaka
-        </button>
+        <button onClick={onBack} className={backBtn}>Tillbaka</button>
         <button onClick={onNext} className={primaryBtn}>
-          Nästa
+          Nästa <ChevronRight className="w-4 h-4" />
         </button>
       </div>
     </div>
   )
 }
 
-/* ── Step 4 ── */
+/* ── Step 4: Finances ── */
 function Step4({
   paydayDay,
   monthlyRent,
   onPaydayChange,
   onRentChange,
-  onSubmit,
+  onNext,
   onBack,
-  saving,
   inputClass,
   labelClass,
   primaryBtn,
@@ -399,9 +454,8 @@ function Step4({
   monthlyRent: string
   onPaydayChange: (v: string) => void
   onRentChange: (v: string) => void
-  onSubmit: () => void
+  onNext: () => void
   onBack: () => void
-  saving: boolean
   inputClass: string
   labelClass: string
   primaryBtn: string
@@ -410,9 +464,9 @@ function Step4({
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-zinc-100 mb-2">Sista biten</h2>
+        <h2 className="text-2xl font-bold text-zinc-100 mb-2">Din månadsekonomi</h2>
         <p className="text-sm text-zinc-500">
-          Hjälper mig förstå din månadsekonomi.
+          Hjälper mig förstå dina fasta utgifter och veta när du fått lön.
         </p>
       </div>
       <div className="space-y-4">
@@ -429,7 +483,7 @@ function Step4({
           />
         </div>
         <div>
-          <label className={labelClass}>Vad betalar du i hyra/boendekostnad?</label>
+          <label className={labelClass}>Boendekostnad per månad</label>
           <div className="relative">
             <input
               type="number"
@@ -438,31 +492,161 @@ function Step4({
               min={0}
               className={`${inputClass} pr-10`}
             />
-            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 text-sm pointer-events-none">
-              kr
-            </span>
+            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 text-sm pointer-events-none">kr</span>
           </div>
         </div>
       </div>
       <div className="flex gap-3">
-        <button onClick={onBack} disabled={saving} className={backBtn}>
-          Tillbaka
-        </button>
-        <button
-          onClick={onSubmit}
-          disabled={saving}
-          className={primaryBtn}
-        >
-          {saving ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Sparar...
-            </>
-          ) : (
-            'Klar — ta mig till Pulse'
-          )}
+        <button onClick={onBack} className={backBtn}>Tillbaka</button>
+        <button onClick={onNext} className={primaryBtn}>
+          Nästa <ChevronRight className="w-4 h-4" />
         </button>
       </div>
+    </div>
+  )
+}
+
+/* ── Step 5: Bank connection ── */
+function Step5({
+  onConnect,
+  onSkip,
+  onBack,
+  loading,
+  primaryBtn,
+  backBtn,
+}: {
+  onConnect: () => void
+  onSkip: () => void
+  onBack: () => void
+  loading: boolean
+  primaryBtn: string
+  backBtn: string
+}) {
+  const benefits = [
+    { icon: Zap, label: 'Automatisk synk', desc: 'Transaktioner hämtas direkt från din bank' },
+    { icon: TrendingUp, label: 'Smarta insikter', desc: 'AI-analys baserat på dina verkliga utgifter' },
+    { icon: Bell, label: 'Personliga notiser', desc: 'Varningar när du spenderar mer än vanligt' },
+  ]
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <div className="w-12 h-12 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center mb-4">
+          <Building2 className="w-6 h-6 text-blue-400" />
+        </div>
+        <h2 className="text-2xl font-bold text-zinc-100 mb-2">Koppla din bank</h2>
+        <p className="text-sm text-zinc-500 leading-relaxed">
+          Anslut din bank via Tink — säker öppen bankstandard (PSD2). Pulse kan aldrig flytta pengar, bara läsa transaktioner.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        {benefits.map(({ icon: Icon, label, desc }) => (
+          <div key={label} className="flex items-start gap-3 p-3 rounded-xl bg-[#141414] border border-white/[0.04]">
+            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center shrink-0 mt-0.5">
+              <Icon className="w-4 h-4 text-emerald-400" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-zinc-200">{label}</p>
+              <p className="text-xs text-zinc-600 mt-0.5">{desc}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="space-y-3">
+        <button
+          onClick={onConnect}
+          disabled={loading}
+          className={primaryBtn.replace('flex-1', 'w-full')}
+        >
+          {loading ? (
+            <><Loader2 className="w-4 h-4 animate-spin" /> Öppnar bank...</>
+          ) : (
+            <><Building2 className="w-4 h-4" /> Koppla din bank</>
+          )}
+        </button>
+
+        <div className="flex gap-3">
+          <button onClick={onBack} className={backBtn}>Tillbaka</button>
+          <button
+            onClick={onSkip}
+            className="flex-1 text-center text-sm text-zinc-600 hover:text-zinc-400 transition-colors py-3 rounded-xl"
+          >
+            Hoppa över för nu
+          </button>
+        </div>
+      </div>
+
+      <p className="text-xs text-zinc-700 text-center">
+        Drivs av Tink (ägt av Visa) · Krypterad anslutning · Aldrig delat
+      </p>
+    </div>
+  )
+}
+
+/* ── Step 6: Done ── */
+function Step6({
+  bankConnected,
+  name,
+  onFinish,
+  saving,
+  primaryBtn,
+}: {
+  bankConnected: boolean
+  name: string
+  onFinish: () => void
+  saving: boolean
+  primaryBtn: string
+}) {
+  const firstName = name.split(' ')[0] || 'du'
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mb-4">
+          <Check className="w-6 h-6 text-emerald-400" />
+        </div>
+        <h2 className="text-2xl font-bold text-zinc-100 mb-2">
+          Allt klart, {firstName}!
+        </h2>
+        <p className="text-sm text-zinc-500 leading-relaxed">
+          {bankConnected
+            ? 'Din bank är kopplad och Pulse börjar analysera dina transaktioner direkt.'
+            : 'Profilen är sparad. Du kan koppla din bank när som helst via Inställningar.'}
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <div className="flex items-center gap-3 p-3 rounded-xl bg-[#141414] border border-white/[0.04]">
+          <div className="w-5 h-5 rounded-full bg-emerald-500/20 flex items-center justify-center shrink-0">
+            <Check className="w-3 h-3 text-emerald-400" />
+          </div>
+          <span className="text-sm text-zinc-400">Profil konfigurerad</span>
+        </div>
+        <div className={`flex items-center gap-3 p-3 rounded-xl border ${bankConnected ? 'bg-[#141414] border-white/[0.04]' : 'bg-[#0f0f0f] border-white/[0.04] opacity-50'}`}>
+          <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${bankConnected ? 'bg-emerald-500/20' : 'bg-zinc-800'}`}>
+            {bankConnected
+              ? <Check className="w-3 h-3 text-emerald-400" />
+              : <div className="w-2 h-2 rounded-full bg-zinc-600" />}
+          </div>
+          <span className="text-sm text-zinc-400">
+            {bankConnected ? 'Bank kopplad · synkar transaktioner' : 'Bank ej kopplad (valfritt)'}
+          </span>
+        </div>
+      </div>
+
+      <button
+        onClick={onFinish}
+        disabled={saving}
+        className={primaryBtn.replace('flex-1', 'w-full')}
+      >
+        {saving ? (
+          <><Loader2 className="w-4 h-4 animate-spin" /> Startar...</>
+        ) : (
+          <>Öppna Pulse <ArrowRight className="w-4 h-4" /></>
+        )}
+      </button>
     </div>
   )
 }

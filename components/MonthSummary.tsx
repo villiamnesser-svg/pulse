@@ -23,6 +23,7 @@ interface SummaryData {
 }
 
 interface Props {
+  aliasMap?: Map<string, string>
   summary: SummaryData | null
   loading: boolean
 }
@@ -31,15 +32,16 @@ function fmt(n: number) {
   return Math.abs(n).toLocaleString('sv-SE', { maximumFractionDigits: 0 }) + ' kr'
 }
 
-export default function MonthSummary({ summary, loading }: Props) {
+export default function MonthSummary({ summary, loading, aliasMap }: Props) {
   const [recatState, setRecatState] = useState<'idle' | 'running' | 'done'>('idle')
   const [recatProgress, setRecatProgress] = useState<{ updated: number; remaining: number } | null>(null)
 
   async function runRecategorize() {
     setRecatState('running')
     let remaining = summary?.uncategorizedCount ?? 1
+    let maxIterations = 20 // safety cap
 
-    while (remaining > 0) {
+    while (remaining > 0 && maxIterations-- > 0) {
       try {
         const res = await fetch('/api/recategorize', { method: 'POST' })
         if (!res.ok) break
@@ -47,7 +49,7 @@ export default function MonthSummary({ summary, loading }: Props) {
         setRecatProgress(data)
         remaining = data.remaining
         if (remaining === 0) break
-        await new Promise((r) => setTimeout(r, 500))
+        await new Promise((r) => setTimeout(r, 600))
       } catch {
         break
       }
@@ -156,7 +158,7 @@ export default function MonthSummary({ summary, loading }: Props) {
             {summary.recentTransactions.map((tx) => (
               <div key={tx.id} className="flex items-center justify-between py-1.5 border-b border-white/[0.04] last:border-0">
                 <div className="flex-1 min-w-0">
-                  <div className="text-xs text-zinc-300 truncate">{tx.merchant}</div>
+                  <div className="text-xs text-zinc-300 truncate">{aliasMap?.get(tx.merchant) ?? tx.merchant}</div>
                   <div className="text-[10px] text-zinc-600">
                     {new Date(tx.date).toLocaleDateString('sv-SE', { month: 'short', day: 'numeric' })}
                     {tx.category && !tx.isIncome && (

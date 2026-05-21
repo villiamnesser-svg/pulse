@@ -109,6 +109,42 @@ export default function PushSetup({ banner, onDismiss }: PushSetupProps) {
   // ── Banner variant (shown on dashboard if not subscribed) ──
   if (banner) {
     if (status === 'loading' || status === 'subscribed') return null
+
+    if (status === 'ios-standalone-required') {
+      return (
+        <div className="bg-[#0f0f0f] border border-amber-500/20 rounded-2xl p-4">
+          <div className="flex items-start justify-between gap-3 mb-3">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-amber-500/10 flex items-center justify-center shrink-0">
+                <Bell className="w-3.5 h-3.5 text-amber-400" />
+              </div>
+              <p className="text-sm font-semibold text-zinc-200">Aktivera notiser på iPhone</p>
+            </div>
+            {onDismiss && (
+              <button onClick={onDismiss} className="text-zinc-600 hover:text-zinc-400 transition-colors shrink-0">
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+          <p className="text-xs text-zinc-500 mb-3">För att få push-notiser på iPhone måste appen installeras på hemskärmen:</p>
+          <div className="space-y-2">
+            {[
+              { step: '1', text: 'Öppna den här sidan i Safari' },
+              { step: '2', text: 'Tryck på delningsikonen  ↑  längst ner' },
+              { step: '3', text: 'Välj "Lägg till på hemskärmen"' },
+              { step: '4', text: 'Öppna Pulse från hemskärmen' },
+              { step: '5', text: 'Tryck på 🔔 och tillåt notiser' },
+            ].map(({ step, text }) => (
+              <div key={step} className="flex items-center gap-2.5">
+                <span className="w-5 h-5 rounded-full bg-amber-500/10 text-amber-400 text-[10px] font-bold flex items-center justify-center shrink-0">{step}</span>
+                <span className="text-xs text-zinc-400">{text}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )
+    }
+
     return (
       <div className="bg-[#0f0f0f] border border-white/[0.08] rounded-2xl p-4 flex items-start gap-3">
         <div className="w-8 h-8 rounded-lg bg-emerald-950/60 flex items-center justify-center shrink-0 mt-0.5">
@@ -118,12 +154,10 @@ export default function PushSetup({ banner, onDismiss }: PushSetupProps) {
           <p className="text-sm font-medium text-zinc-200">Aktivera push-notiser</p>
           <p className="text-xs text-zinc-500 mt-0.5">
             {status === 'denied'
-              ? 'Notiser är blockerade i din webbläsare. Tillåt dem under webbläsarens inställningar.'
-              : status === 'ios-standalone-required'
-              ? 'På iPhone: tryck på delningsikonen och välj "Lägg till på hemskärmen" — öppna sedan appen därifrån för att aktivera notiser.'
-              : 'Få varningar direkt när din ekonomi behöver uppmärksamhet — utan att öppna appen.'}
+              ? 'Notiser är blockerade. Tillåt dem under webbläsarens inställningar.'
+              : 'Få varningar direkt när din ekonomi behöver uppmärksamhet.'}
           </p>
-          {status !== 'denied' && status !== 'ios-standalone-required' && (
+          {status !== 'denied' && (
             <button
               onClick={() => void subscribe()}
               className="mt-2.5 text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors"

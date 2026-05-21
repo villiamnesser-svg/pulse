@@ -1,4 +1,5 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
+import { getUserId } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { detectSubscriptions } from '@/lib/subscriptions'
 
@@ -19,51 +20,42 @@ export interface CalendarDay {
   isPast: boolean
 }
 
-export async function GET() {
-  const PAYDAY_DAY = parseInt(process.env.PAYDAY_DAY ?? '25', 10)
-  const MONTHLY_RENT = parseFloat(process.env.MONTHLY_RENT ?? '8500')
-  const CRITICAL_BUFFER = parseFloat(process.env.CRITICAL_BUFFER ?? '5000')
+export async function GET(req: NextRequest) {
+  const userId = await getUserId(req)
+
+  const profile = await prisma.userProfile.findFirst({ where: { userId } })
+  const PAYDAY_DAY = profile?.paydayDay ?? parseInt(process.env.PAYDAY_DAY ?? '25', 10)
+  const MONTHLY_RENT = profile?.monthlyRent ?? parseFloat(process.env.MONTHLY_RENT ?? '8500')
+  const CRITICAL_BUFFER = profile?.criticalBuffer ?? parseFloat(process.env.CRITICAL_BUFFER ?? '5000')
 
   const today = new Date()
   today.setHours(0, 0, 0, 0)
 
-  // Current balance from latest income minus expenses this month
   const [incomeAgg, expenseAgg] = await Promise.all([
-    prisma.transaction.aggregate({ where: { isIncome: true }, _sum: { amount: true } }),
-    prisma.transaction.aggregate({ where: { isIncome: false }, _sum: { amount: true } }),
+    prisma.transaction.aggregate({ where: { userId, isIncome: true }, _sum: { amount: true } }),
+    prisma.transaction.aggregate({ where: { userId, isIncome: false }, _sum: { amount: true } }),
   ])
   const currentBalance = (incomeAgg._sum.amount ?? 0) + (expenseAgg._sum.amount ?? 0)
 
-  // Average daily spend (last 30 days, excluding rent/income)
   const since30 = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000)
   const recentSpend = await prisma.transaction.aggregate({
-    where: { isIncome: false, date: { gte: since30 }, category: { not: 'hyra' } },
+    where: { userId, isIncome: false, date: { gte: since30 }, category: { not: 'hyra' }, NOT: { category: { in: ['utlägg', 'återbetalning'] } } },
     _sum: { amount: true },
     _count: true,
   })
-  const avgDailySpend = recentSpend._count > 0
-    ? Math.abs((recentSpend._sum.amount ?? 0)) / 30
-    : 300
+  const avgDailySpend = recentSpend._count > 0 ? Math.abs((recentSpend._sum.amount ?? 0)) / 30 : 300
 
-  const subscriptions = await detectSubscriptions()
+  const subscriptions = await detectSubscriptions(userId)
 
-  // Build next-charge dates for subscriptions
-  // lastCharged + 30 days → expected next charge
   const subEvents: { dayOfMonth: number; label: string; amount: number; merchant: string }[] = []
   for (const sub of subscriptions) {
     const last = sub.lastCharged instanceof Date ? sub.lastCharged : new Date(sub.lastCharged)
     const next = new Date(last.getTime() + 30 * 24 * 60 * 60 * 1000)
     if (next >= today && next <= new Date(today.getTime() + 35 * 24 * 60 * 60 * 1000)) {
-      subEvents.push({
-        dayOfMonth: next.getDate(),
-        label: sub.merchant,
-        amount: sub.amount,
-        merchant: sub.merchant,
-      })
+      subEvents.push({ dayOfMonth: next.getDate(), label: sub.merchant, amount: sub.amount, merchant: sub.merchant })
     }
   }
 
-  // Build 30-day calendar
   const days: CalendarDay[] = []
   let balance = currentBalance
 
@@ -78,10 +70,9 @@ export async function GET() {
     const events: CalendarEvent[] = []
     let dayDelta = -avgDailySpend
 
-    // Payday
     if (isPayday) {
       const lastIncome = await prisma.transaction.findFirst({
-        where: { isIncome: true },
+        where: { userId, isIncome: true },
         orderBy: { date: 'desc' },
         select: { amount: true },
       })
@@ -90,13 +81,11 @@ export async function GET() {
       dayDelta += salary
     }
 
-    // Rent on day 1
     if (dayNum === 1 && MONTHLY_RENT > 0) {
       events.push({ type: 'rent', label: 'Hyra', amount: -MONTHLY_RENT })
       dayDelta -= MONTHLY_RENT
     }
 
-    // Subscriptions
     for (const sub of subEvents) {
       if (sub.dayOfMonth === dayNum) {
         events.push({ type: 'subscription', label: sub.label, amount: -sub.amount, merchant: sub.merchant })
@@ -104,18 +93,11 @@ export async function GET() {
       }
     }
 
-    if (!isPast) {
-      balance += dayDelta
-    }
+    if (!isPast) balance += dayDelta
 
     days.push({
-      date: dateStr,
-      events,
-      projectedBalance: Math.round(balance),
-      isCritical: balance < CRITICAL_BUFFER && !isPayday,
-      isPayday,
-      isToday,
-      isPast,
+      date: dateStr, events, projectedBalance: Math.round(balance),
+      isCritical: balance < CRITICAL_BUFFER && !isPayday, isPayday, isToday, isPast,
     })
   }
 

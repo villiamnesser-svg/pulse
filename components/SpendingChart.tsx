@@ -35,12 +35,13 @@ function CustomTooltip({ active, payload, label }: any) {
 export default function SpendingChart() {
   const [data, setData] = useState<DayData[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
 
   useEffect(() => {
     fetch('/api/spending')
-      .then((r) => r.json())
+      .then((r) => { if (!r.ok) throw new Error('Failed'); return r.json() })
       .then((d) => { setData(d as DayData[]); setLoading(false) })
-      .catch(() => setLoading(false))
+      .catch(() => { setError(true); setLoading(false) })
   }, [])
 
   if (loading) {
@@ -52,8 +53,25 @@ export default function SpendingChart() {
     )
   }
 
+  if (error) {
+    return (
+      <div className="bg-[#0f0f0f] border border-white/[0.08] rounded-2xl p-5 text-center">
+        <p className="text-xs text-zinc-600 py-8">Kunde inte ladda utgiftsdata.</p>
+      </div>
+    )
+  }
+
+  if (!loading && data.length === 0) {
+    return (
+      <div className="bg-[#0f0f0f] border border-white/[0.08] rounded-2xl p-5 text-center">
+        <p className="text-xs text-zinc-600 py-8">Inga utgifter de senaste 30 dagarna.</p>
+      </div>
+    )
+  }
+
   const avg = data.length > 0 ? Math.round(data.reduce((s, d) => s + d.amount, 0) / data.length) : 0
-  const max = Math.max(...data.map((d) => d.amount), 1)
+  // Use reduce instead of spread to avoid call-stack overflow on large arrays
+  const max = data.reduce((m, d) => Math.max(m, d.amount), 1)
   const today = new Date().toISOString().slice(0, 10)
 
   // Show every 5th label to avoid clutter

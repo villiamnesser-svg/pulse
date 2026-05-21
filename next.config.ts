@@ -1,8 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  typescript: { ignoreBuildErrors: true },
-  serverExternalPackages: ['@libsql/client', '@prisma/adapter-libsql', 'better-sqlite3', '@prisma/adapter-better-sqlite3'],
+  // No TypeScript errors — ignoreBuildErrors removed
+  serverExternalPackages: ['@libsql/client', '@prisma/adapter-libsql'],
 };
 
 export default nextConfig;
