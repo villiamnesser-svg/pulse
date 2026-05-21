@@ -15,7 +15,11 @@ interface Goal {
   monthsToGo: number | null
 }
 
-const EMOJI_OPTIONS = ['🎯', '🏠', '✈️', '🚗', '💻', '👶', '🎓', '💍']
+const EMOJI_OPTIONS = [
+  '🎯', '🏠', '✈️', '🚗',
+  '💻', '🎓', '💍', '👶',
+  '💰', '🏋️', '📱', '🌍',
+]
 
 const MONTH_NAMES = [
   'jan', 'feb', 'mar', 'apr', 'maj', 'jun',
@@ -292,19 +296,22 @@ export default function GoalsPage() {
 
             {/* Emoji picker */}
             <div>
-              <p className="text-xs text-zinc-500 mb-2">Välj ikon</p>
-              <div className="grid grid-cols-8 gap-2">
+              <p className="text-xs text-zinc-500 mb-2.5">Välj ikon</p>
+              <div className="grid grid-cols-6 gap-2">
                 {EMOJI_OPTIONS.map(e => (
                   <button
                     key={e}
                     onClick={() => setNewEmoji(e)}
-                    className={`text-2xl py-1.5 rounded-xl transition-colors ${
+                    className={`relative flex items-center justify-center text-2xl h-12 rounded-xl transition-all active:scale-95 ${
                       newEmoji === e
-                        ? 'bg-emerald-950/50 border border-emerald-500/30'
-                        : 'bg-[#161616] border border-white/[0.04] hover:border-white/[0.12]'
+                        ? 'bg-emerald-950/60 ring-2 ring-emerald-500/50 ring-offset-1 ring-offset-[#0f0f0f]'
+                        : 'bg-[#161616] border border-white/[0.06] hover:bg-[#1c1c1c] hover:border-white/[0.15]'
                     }`}
                   >
                     {e}
+                    {newEmoji === e && (
+                      <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full border-2 border-[#0f0f0f]" />
+                    )}
                   </button>
                 ))}
               </div>
