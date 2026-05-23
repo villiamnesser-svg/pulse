@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import { House, List, CalendarDays, MessageCircle, Sparkles, Trophy } from 'lucide-react'
 
 const NAV_ITEMS = [
-  { href: '/',             label: 'Hem',       Icon: House },
+  { href: '/dashboard',    label: 'Hem',       Icon: House },
   { href: '/transactions', label: 'Historik',  Icon: List },
   { href: '/goals',        label: 'Mål',       Icon: Trophy },
   { href: '/calendar',     label: 'Kalender',  Icon: CalendarDays },

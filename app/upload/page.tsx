@@ -65,7 +65,7 @@ export default function UploadPage() {
   return (
     <div className="min-h-screen flex flex-col bg-[#080808]">
       <header className="bg-[#080808]/80 backdrop-blur-xl border-b border-white/[0.06] px-4 py-3 flex items-center gap-4 sticky top-0 sm:top-12 z-20">
-        <Link href="/" className="text-zinc-500 hover:text-zinc-300 transition-colors text-sm flex items-center gap-1.5">
+        <Link href="/dashboard" className="text-zinc-500 hover:text-zinc-300 transition-colors text-sm flex items-center gap-1.5">
           <ChevronLeft className="w-4 h-4" />
           Dashboard
         </Link>

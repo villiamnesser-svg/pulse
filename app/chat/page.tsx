@@ -201,7 +201,7 @@ export default function ChatPage() {
     <div className="flex flex-col bg-[#080808]" style={{ height: '100dvh' }}>
       {/* Header */}
       <header className="bg-[#080808]/90 backdrop-blur-xl border-b border-white/[0.06] px-4 py-3 flex items-center gap-3 sticky top-0 sm:top-12 z-30 shrink-0">
-        <Link href="/" className="text-zinc-500 hover:text-zinc-300 transition-colors">
+        <Link href="/dashboard" className="text-zinc-500 hover:text-zinc-300 transition-colors">
           <ArrowLeft className="w-4 h-4" />
         </Link>
         <div className="w-7 h-7 rounded-xl bg-emerald-600/20 border border-emerald-500/30 flex items-center justify-center">

@@ -23,7 +23,7 @@ export default function LoginPage() {
       })
       const data = await res.json() as { ok?: boolean; error?: string }
       if (!res.ok) { setError(data.error ?? 'Inloggning misslyckades'); return }
-      window.location.href = '/'
+      window.location.href = '/dashboard'
     } catch {
       setError('Något gick fel. Försök igen.')
     } finally {

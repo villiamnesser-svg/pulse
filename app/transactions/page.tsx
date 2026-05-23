@@ -266,7 +266,7 @@ export default function TransactionsPage() {
     <div className="min-h-screen bg-[#080808] pb-24">
       {/* Header */}
       <header className="bg-[#080808]/80 backdrop-blur-xl border-b border-white/[0.06] px-4 py-3 flex items-center gap-4 sticky top-0 sm:top-12 z-30">
-        <Link href="/" className="text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1.5 text-sm">
+        <Link href="/dashboard" className="text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1.5 text-sm">
           <ChevronLeft className="w-4 h-4" />
           Dashboard
         </Link>

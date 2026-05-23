@@ -59,7 +59,7 @@ export default function CalendarPage() {
   return (
     <div className="min-h-screen bg-[#080808]">
       <header className="bg-[#080808]/80 backdrop-blur-xl border-b border-white/[0.06] px-4 py-3 flex items-center gap-3 sticky top-0 sm:top-12 z-30">
-        <Link href="/" className="text-zinc-500 hover:text-zinc-300 transition-colors">
+        <Link href="/dashboard" className="text-zinc-500 hover:text-zinc-300 transition-colors">
           <ArrowLeft className="w-4 h-4" />
         </Link>
         <CalendarDays className="w-4 h-4 text-emerald-500" />
