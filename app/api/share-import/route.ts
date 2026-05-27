@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { parseSwedbank as parseCSV } from '@/lib/parser'
+import { parseCSV } from '@/lib/parser'
 import { categorizeBatch } from '@/lib/categorizer'
 import { prisma } from '@/lib/db'
 import { analyzeNewTransactions } from '@/lib/habits'
@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
 
     if (!csvText.trim()) return NextResponse.redirect(new URL('/upload?error=empty', req.url))
 
-    const parsed = parseCSV(csvText)
+    const { transactions: parsed } = parseCSV(csvText)
     if (parsed.length === 0) return NextResponse.redirect(new URL('/upload?error=parse', req.url))
 
     const categorized = await categorizeBatch(parsed, userId)
@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
       } catch {}
     }
 
-    return NextResponse.redirect(new URL(`/?imported=${imported}`, req.url))
+    return NextResponse.redirect(new URL(`/dashboard?imported=${imported}`, req.url))
   } catch (err) {
     console.error('Share import error:', err)
     return NextResponse.redirect(new URL('/upload?error=failed', req.url))

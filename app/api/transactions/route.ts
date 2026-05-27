@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { parseSwedbank } from '@/lib/parser'
+import { parseCSV } from '@/lib/parser'
 import { categorizeBatch } from '@/lib/categorizer'
 import { updateBaseline } from '@/lib/baseline'
 import { calculateVelocity } from '@/lib/velocity'
@@ -69,9 +69,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No CSV data provided' }, { status: 400 })
     }
 
-    const parsed = parseSwedbank(csvText)
+    const { transactions: parsed, bank: detectedBank } = parseCSV(csvText)
     if (parsed.length === 0) {
-      return NextResponse.json({ error: 'No transactions found in CSV' }, { status: 400 })
+      return NextResponse.json({ error: 'Inga transaktioner hittades i filen. Kontrollera att det är en CSV-fil från din bank.' }, { status: 400 })
     }
 
     const categorized = await categorizeBatch(parsed, userId)
@@ -124,7 +124,7 @@ export async function POST(req: NextRequest) {
       })()
     }
 
-    return NextResponse.json({ imported, skipped })
+    return NextResponse.json({ imported, skipped, bank: detectedBank })
   } catch (err) {
     console.error('Transaction import error:', err)
     return NextResponse.json({ error: 'Import failed' }, { status: 500 })
