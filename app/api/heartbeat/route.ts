@@ -40,6 +40,7 @@ import {
   unreimbursedOutlayAlert,
   reimbursementMatchSuggestion,
   mondayWeeklyRecap,
+  budgetOverspendAlert,
   type Notification,
 } from '@/lib/notifications'
 import { canCallAI, recordAICall } from '@/lib/ai-budget'
@@ -159,6 +160,12 @@ async function runForUser(userId: string) {
   })
 
   const pushed: string[] = []
+
+  // ── PRIORITY 0: Budget overspend / near-limit alert ──────────────────────
+
+  if (hour >= 9 && hour <= 20) {
+    await maybePush(userId, 'budget-alert', await budgetOverspendAlert(userId), todayStart, pushed, sentToday)
+  }
 
   // ── PRIORITY 1: Anomaly push ───────────────────────────────────────────────
 

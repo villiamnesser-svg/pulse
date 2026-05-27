@@ -7,6 +7,8 @@ export interface Notification {
   body: string
 }
 
+const fmt = (n: number) => Math.round(n).toLocaleString('sv-SE')
+
 const MONTH_NAMES = [
   'januari', 'februari', 'mars', 'april', 'maj', 'juni',
   'juli', 'augusti', 'september', 'oktober', 'november', 'december',
@@ -1197,4 +1199,59 @@ export async function mondayWeeklyRecap(userId: string): Promise<Notification | 
       body: `Förra veckan: ${fmt(lastWeekTotal)} kr — ungefär som vanligt (snitt ${fmt(avgWeekly)} kr/vecka).`,
     }
   }
+}
+
+// ─── BUDGET ALERT ─────────────────────────────────────────────────────────────
+
+// Send when a budget category reaches 80% or is exceeded this month.
+// Prioritises over-budget categories; only fires once per category per day.
+export async function budgetOverspendAlert(userId: string): Promise<Notification | null> {
+  const budgets = await prisma.budget.findMany({ where: { userId } })
+  if (budgets.length === 0) return null
+
+  const now = new Date()
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+
+  // Spend per category this month
+  const txs = await prisma.transaction.findMany({
+    where: { userId, isIncome: false, date: { gte: monthStart } },
+    select: { category: true, amount: true },
+  })
+  const spent: Record<string, number> = {}
+  for (const tx of txs) {
+    const cat = tx.category ?? 'övrigt'
+    spent[cat] = (spent[cat] ?? 0) + Math.abs(tx.amount)
+  }
+
+  // Check budgets — over first, then near (80 %)
+  let overCategory: { name: string; spent: number; limit: number } | null = null
+  let nearCategory: { name: string; spent: number; limit: number; pct: number } | null = null
+
+  for (const budget of budgets) {
+    const s = spent[budget.category] ?? 0
+    const pct = s / budget.amount
+    if (pct >= 1 && (!overCategory || s > overCategory.spent)) {
+      overCategory = { name: budget.category, spent: s, limit: budget.amount }
+    } else if (pct >= 0.8 && pct < 1 && (!nearCategory || pct > nearCategory.pct)) {
+      nearCategory = { name: budget.category, spent: s, limit: budget.amount, pct }
+    }
+  }
+
+  if (overCategory) {
+    const over = fmt(overCategory.spent - overCategory.limit)
+    return {
+      title: 'Pulse — Budgetvarning',
+      body: `Du har gått ${over} kr över din budget för ${overCategory.name} den här månaden. Budgetgräns: ${fmt(overCategory.limit)} kr.`,
+    }
+  }
+
+  if (nearCategory) {
+    const left = fmt(nearCategory.limit - nearCategory.spent)
+    return {
+      title: 'Pulse — Budgetnotering',
+      body: `${Math.round(nearCategory.pct * 100)}% av din ${nearCategory.name}-budget använd. Bara ${left} kr kvar av ${fmt(nearCategory.limit)} kr.`,
+    }
+  }
+
+  return null
 }
