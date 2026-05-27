@@ -103,8 +103,9 @@ model BankConnection {
   userId          String    @default("local")
   requisitionId   String    @unique
   accountIds      String    @default("")
-  institutionId   String    @default("tink")
-  keys            String    @default("")
+  institutionId   String    @default("unknown")
+  provider        String    @default("nordigen")
+  keys            String    @default("{}")
   status          String    @default("pending")
   lastSyncedAt    DateTime?
   createdAt       DateTime  @default(now())

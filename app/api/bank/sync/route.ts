@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { fetchTransactions, fetchAccounts, refreshUserToken, tinkAmountToFloat } from '@/lib/tink'
+import { getRequisition, getAccountTransactions, getAccountBalance, txToLocal } from '@/lib/nordigen'
 import { categorizeBatch } from '@/lib/categorizer'
 import { prisma } from '@/lib/db'
 import { getUserId } from '@/lib/auth'
@@ -11,71 +11,80 @@ export async function POST(req: NextRequest) {
     const userId = await getUserId(req)
 
     const connection = await prisma.bankConnection.findFirst({
-      where: { userId, status: 'linked' },
+      where: { userId, status: 'linked', provider: 'nordigen' },
       orderBy: { createdAt: 'desc' },
     })
 
     if (!connection) {
-      return NextResponse.json({ error: 'Ingen aktiv bankkoppling' }, { status: 404 })
+      return NextResponse.json({ error: 'Ingen aktiv Nordigen-koppling', ok: false }, { status: 404 })
     }
 
-    const { access_token, refresh_token } = JSON.parse(connection.keys || '{}') as {
-      access_token: string
-      refresh_token: string
-    }
-
-    // Refresh token to ensure it's valid
-    let activeToken = access_token
-    try {
-      const refreshed = await refreshUserToken(refresh_token)
-      activeToken = refreshed.access_token
-      await prisma.bankConnection.update({
-        where: { id: connection.id },
-        data: { keys: JSON.stringify({ access_token: refreshed.access_token, refresh_token: refreshed.refresh_token }) },
-      })
-    } catch {
-      // Refresh failed — existing token may still work, but if not we'll catch it below
-      console.warn('Token refresh failed, trying existing token')
-    }
-
+    // Verify requisition is still active
     let accountIds: string[] = JSON.parse(connection.accountIds || '[]')
-    if (accountIds.length === 0) {
-      const accounts = await fetchAccounts(activeToken)
-      accountIds = accounts.map(a => a.id)
-      await prisma.bankConnection.update({
-        where: { id: connection.id },
-        data: { accountIds: JSON.stringify(accountIds) },
-      })
+    try {
+      const req2 = await getRequisition(connection.requisitionId)
+      if (req2.status !== 'LN') {
+        await prisma.bankConnection.update({
+          where: { id: connection.id },
+          data: { status: 'needs_reauth' },
+        })
+        return NextResponse.json({ ok: false, error: 'Bankkopplingen har gått ut — koppla om din bank.' }, { status: 401 })
+      }
+      // Refresh account IDs from requisition in case they changed
+      if (req2.accounts.length > 0) {
+        accountIds = req2.accounts
+        await prisma.bankConnection.update({
+          where: { id: connection.id },
+          data: { accountIds: JSON.stringify(accountIds) },
+        })
+      }
+    } catch (err) {
+      const msg = String(err)
+      if (msg.includes('404') || msg.includes('not_found')) {
+        await prisma.bankConnection.update({
+          where: { id: connection.id },
+          data: { status: 'needs_reauth' },
+        })
+        return NextResponse.json({ ok: false, error: 'Bankkopplingen hittades inte — koppla om.' }, { status: 401 })
+      }
+      // Nordigen might be temporarily down — continue with stored account IDs
+      console.warn('Could not verify requisition, using cached account IDs:', err)
     }
 
-    // Collect all raw transactions first
-    const rawTxs: { id: string; merchant: string; amount: number; date: Date; isIncome: boolean }[] = []
-    let pageToken: string | undefined
+    if (accountIds.length === 0) {
+      return NextResponse.json({ ok: false, error: 'Inga konton kopplade' }, { status: 400 })
+    }
 
-    do {
-      const { transactions, nextPageToken } = await fetchTransactions(activeToken, accountIds, pageToken)
-      pageToken = nextPageToken
+    // Fetch from last sync date (or 90 days back)
+    const dateFrom = connection.lastSyncedAt
+      ? new Date(connection.lastSyncedAt.getTime() - 86400 * 1000 * 3).toISOString().slice(0, 10)  // 3-day overlap
+      : new Date(Date.now() - 90 * 86400 * 1000).toISOString().slice(0, 10)
 
-      for (const tx of transactions) {
-        if (tx.status !== 'BOOKED') continue
-        const amount = tinkAmountToFloat(tx.amount)
-        const merchant = tx.descriptions.display || tx.descriptions.original || 'Okänd'
-        rawTxs.push({ id: tx.id, merchant, amount, date: new Date(tx.dates.booked), isIncome: amount > 0 })
+    const rawTxs: ReturnType<typeof txToLocal>[] = []
+
+    for (const accountId of accountIds) {
+      const nordigenTxs = await getAccountTransactions(accountId, dateFrom)
+      for (let i = 0; i < nordigenTxs.length; i++) {
+        const tx = nordigenTxs[i]
+        const fallbackId = `ng-${accountId.slice(-6)}-${tx.bookingDate}-${i}`
+        rawTxs.push(txToLocal(tx, fallbackId))
       }
-    } while (pageToken)
+    }
 
-    // Categorize in batch
-    const toCategorize = rawTxs.map(t => ({ id: t.id, date: t.date, merchant: t.merchant, amount: t.amount, balance: 0, isIncome: t.isIncome }))
+    // Get balance from first account
+    let balance = 0
+    if (accountIds.length > 0) {
+      balance = await getAccountBalance(accountIds[0])
+    }
+
+    // Categorize
+    const toCategorize = rawTxs.map(t => ({ ...t, balance: 0 }))
     const categorized = await categorizeBatch(toCategorize, userId)
 
-    // Upsert all transactions
     let imported = 0
     let skipped = 0
 
-    for (let i = 0; i < rawTxs.length; i++) {
-      const tx = rawTxs[i]
-      const category = categorized[i]?.category ?? 'övrigt'
-
+    for (const tx of categorized) {
       try {
         await prisma.transaction.upsert({
           where: { id: tx.id },
@@ -86,9 +95,9 @@ export async function POST(req: NextRequest) {
             date: tx.date,
             merchant: tx.merchant,
             amount: tx.amount,
-            balance: 0,
+            balance,
             isIncome: tx.isIncome,
-            category,
+            category: tx.category,
           },
         })
         imported++
@@ -104,10 +113,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, imported, skipped })
   } catch (err) {
-    const errMsg = String(err)
+    const msg = String(err)
     console.error('Bank sync error:', err)
-    // If it's an auth error, mark connection as needing re-auth
-    if (errMsg.includes('401') || errMsg.includes('UNAUTHORIZED') || errMsg.includes('token')) {
+    if (msg.includes('401') || msg.toLowerCase().includes('unauthorized')) {
       const userId = await getUserId(req).catch(() => null)
       if (userId) {
         await prisma.bankConnection.updateMany({
@@ -115,9 +123,9 @@ export async function POST(req: NextRequest) {
           data: { status: 'needs_reauth' },
         }).catch(() => null)
       }
-      return NextResponse.json({ error: 'Bankkopplingen har gått ut — koppla om din bank i Inställningar.' }, { status: 401 })
+      return NextResponse.json({ ok: false, error: 'Bankkopplingen har gått ut — koppla om din bank.' }, { status: 401 })
     }
-    return NextResponse.json({ error: errMsg }, { status: 500 })
+    return NextResponse.json({ ok: false, error: msg }, { status: 500 })
   }
 }
 

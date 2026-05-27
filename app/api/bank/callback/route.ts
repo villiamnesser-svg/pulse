@@ -1,63 +1,59 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getUserToken, fetchAccounts } from '@/lib/tink'
+import { getRequisition } from '@/lib/nordigen'
 import { prisma } from '@/lib/db'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
-  const code = searchParams.get('code')
-  const state = searchParams.get('state') // userId passed via state param
-  const error = searchParams.get('error')
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://pulse-xi-umber.vercel.app'
 
-  if (error || !code) {
-    return NextResponse.redirect(`${baseUrl}/settings?bank=error&reason=${error ?? 'no_code'}`)
+  // Nordigen sends: ?ref=<requisitionId>
+  const ref = searchParams.get('ref')
+  // Tink sends: ?code=... (kept for backward compat)
+  const error = searchParams.get('error')
+
+  if (error) {
+    return NextResponse.redirect(`${baseUrl}/settings?bank=error&reason=${error}`)
   }
 
-  if (!state) {
-    return NextResponse.redirect(`${baseUrl}/settings?bank=error&reason=no_state`)
+  if (!ref) {
+    return NextResponse.redirect(`${baseUrl}/settings?bank=error&reason=no_ref`)
   }
 
   try {
-    // State may be "userId" or "userId|source"
-    const [userId, source] = state.split('|')
+    // Fetch the requisition from Nordigen to get linked account IDs
+    const requisition = await getRequisition(ref)
+
+    if (requisition.status !== 'LN' && requisition.accounts.length === 0) {
+      // Not yet linked — user may have cancelled
+      return NextResponse.redirect(`${baseUrl}/settings?bank=error&reason=not_linked`)
+    }
+
+    // Look up our pending BankConnection
+    const connection = await prisma.bankConnection.findUnique({ where: { requisitionId: ref } })
+    if (!connection) {
+      return NextResponse.redirect(`${baseUrl}/settings?bank=error&reason=no_connection`)
+    }
+
+    // Derive redirect target from reference stored at connect time
+    // reference format: "userId|source|timestamp"
+    const [, source] = (requisition.reference ?? '').split('|')
     const successRedirect = source === 'onboarding'
       ? `${baseUrl}/onboarding?bank=connected`
       : `${baseUrl}/settings?bank=connected`
 
-    // Exchange code for tokens
-    const { access_token, refresh_token } = await getUserToken(code)
-
-    // Fetch accounts
-    const accounts = await fetchAccounts(access_token)
-    const accountIds = accounts.map(a => a.id)
-    // Use the first account's financialInstitutionId as the institution identifier
-    const institutionId = accounts[0]?.financialInstitutionId ?? 'tink'
-
-    // Save connection
-    await prisma.bankConnection.upsert({
-      where: { requisitionId: code },
-      update: {
+    // Update connection with real account IDs
+    await prisma.bankConnection.update({
+      where: { id: connection.id },
+      data: {
         status: 'linked',
-        accountIds: JSON.stringify(accountIds),
-        keys: JSON.stringify({ access_token, refresh_token }),
-        institutionId,
-      },
-      create: {
-        userId,
-        requisitionId: code,
-        institutionId,
-        accountIds: JSON.stringify(accountIds),
-        status: 'linked',
-        keys: JSON.stringify({ access_token, refresh_token }),
+        accountIds: JSON.stringify(requisition.accounts),
+        institutionId: requisition.institution_id,
       },
     })
 
     return NextResponse.redirect(successRedirect)
   } catch (err) {
     console.error('Bank callback error:', err)
-    const errRedirect = state.includes('|onboarding')
-      ? `${baseUrl}/onboarding?bank=error`
-      : `${baseUrl}/settings?bank=error`
-    return NextResponse.redirect(errRedirect)
+    return NextResponse.redirect(`${baseUrl}/settings?bank=error&reason=callback_failed`)
   }
 }
